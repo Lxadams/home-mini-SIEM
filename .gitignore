@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 data/collector_state.json
 config.yaml
+Plan.md
