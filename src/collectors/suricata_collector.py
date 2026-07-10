@@ -1,0 +1,35 @@
+import json
+from src.collectors.base_collector import BaseCollector
+
+class SuricataCollector(BaseCollector):
+    source_name = "suricata"
+
+    def __init__(self, *args, event_types=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.event_types_filter = set(event_types) if event_types else None
+
+    def parse_line(self, raw_line):
+        try:
+            return json.loads(raw_line)
+        except json.JSONDecodeError:
+            print(f"Skipping malformed JSON line: {raw_line[:100]}")
+            return None
+
+    def normalize(self, parsed, raw_line):
+        event_type = parsed.get("event_type")
+        if self.event_types_filter is not None and event_type not in self.event_types_filter:
+            return None
+        alert = parsed.get("alert") or {}
+
+        return {
+            "event_timestamp": parsed.get("timestamp"),
+            "event_type": event_type,
+            "severity": alert.get("severity"),
+            "src_ip": parsed.get("src_ip"),
+            "src_port": parsed.get("src_port"),
+            "dest_ip": parsed.get("dest_ip"),
+            "dest_port": parsed.get("dest_port"),
+            "protocol": parsed.get("proto"),
+            "signature": alert.get("signature"),
+            "raw_message": raw_line
+        }
