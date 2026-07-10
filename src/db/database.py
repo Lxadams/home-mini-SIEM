@@ -12,18 +12,21 @@ def get_connection(db_config: dict):
 def init_db(db_config: dict, schema_path: str) -> None:
     with open(schema_path, "r") as f:
         schema_sql = f.read()
-        
-        statements = [s.strip() for s in schema_sql.split(";") if s.strip()]
-
-        conn = get_connection(db_config)
-        cursor = conn.cursor()
-        try:
-            for statement in statements:
+    statements = [s.strip() for s in schema_sql.split(";") if s.strip()]
+    conn = get_connection(db_config)
+    cursor = conn.cursor()
+    try:
+        for statement in statements:
+            try:
                 cursor.execute(statement)
-            conn.commit()
-        finally:
-            cursor.close()
-            conn.close()
+            except mysql.connector.errors.ProgrammingError as e:
+                if e.errno == 1061:  # Duplicate key name — index already exists
+                    continue
+                raise
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
 
 INSERT_EVENT_SQL = """
 INSERT INTO events (
