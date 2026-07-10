@@ -3,14 +3,14 @@ database:
   port: 3306
   name: "mini_siem"
   user: "siem_app"
-  password: "changeme"
+  password: "CHANGEME"
 
 state_file: "data/collector_state.json"
 
 collectors:
   suricata:
     enabled: true
-    eve_json_path: "tests/sample_eve.json"
+    eve_json_path: "/var/log/suricata/eve.json"
     event_types: ["alert"]
     poll_interval_seconds: 1.0
     from_start: false
