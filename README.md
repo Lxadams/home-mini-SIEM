@@ -52,7 +52,7 @@ mini-siem/
 ├── .gitignore
 ├── config/
 │   ├── config.yaml           # gitignored — real credentials live here
-│   └── config.o.yaml         # committed — placeholder values, documents required shape
+│   └── config.example.yaml   # committed — placeholder values, documents required shape
 ├── src/
 │   ├── config.py             # loads config.yaml
 │   ├── main.py                # entry point: wires config -> collector -> run loop

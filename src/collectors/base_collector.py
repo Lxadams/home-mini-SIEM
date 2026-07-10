@@ -1,6 +1,7 @@
 import json
 import os
 import time
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from src.db.database import get_connection, insert_event
@@ -8,8 +9,15 @@ from src.db.database import get_connection, insert_event
 def utc_now():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
+EVENT_FIELDS = [
+    "ingested_at", "event_timestamp", "source", "event_type", "severity",
+    "src_ip", "src_port", "dest_ip", "dest_port", "protocol",
+    "signature", "raw_message",
+]
+
 class BaseCollector:
     source_name = "base"
+    _state_file_lock = threading.Lock()
     
     def __init__(self, log_path, db_config, state_file, poll_interval_seconds=1.0, from_start=False):
         self.log_path = Path(log_path)
@@ -19,18 +27,47 @@ class BaseCollector:
         self.from_start = from_start
         self._file = None
         self._inode = None
+        self._stop_event = threading.Event()
+    
+    def stop(self):
+        self._stop_event.set()
+    
+    def run(self):
+        self._open_file()
+        conn = get_connection(self.db_config)
+        try:
+            while not self._stop_event.is_set():
+                line = self._file.readline()
+                if line:
+                    self._handle_line(conn, line)
+                    continue
+                if self._rotated():
+                    self._file.close()
+                    self._open_file()
+                    continue
+                self._save_state(self._file.tell(), self._inode)
+                time.sleep(self.poll_interval_seconds)
+        finally:
+            self._save_state(self._file.tell(), self._inode)
+            self._file.close()
+            conn.close()
 
-    def _load_state(self):
+    def _load_state_raw(self):
         if self.state_file.exists():
             return json.loads(self.state_file.read_text())
         return {}
 
-    def _save_state(self, offset, inode):
-        state = self._load_state()
-        state[str(self.log_path)] = {"offset": offset, "inode": inode}
-        self.state_file.parent.mkdir(parents=True, exist_ok=True)
-        self.state_file.write_text(json.dumps(state, indent=2))
+    def _load_state(self):
+        with self._state_file_lock:
+            return self._load_state_raw()
 
+    def _save_state(self, offset, inode):
+        with self._state_file_lock:
+            state = self._load_state_raw()
+            state[str(self.log_path)] = {"offset": offset, "inode": inode}
+            self.state_file.parent.mkdir(parents=True, exist_ok=True)
+            self.state_file.write_text(json.dumps(state, indent=2))
+ 
     def _open_file(self):
         self._file = open(self.log_path, "r", encoding="utf-8", errors="replace")
         self._inode = os.fstat(self._file.fileno()).st_ino
@@ -56,28 +93,6 @@ class BaseCollector:
     def normalize(self, parsed, raw_line):
         raise NotImplementedError
 
-    def run(self):
-        self._open_file()
-        conn = get_connection(self.db_config)
-        try:
-            while True:
-                line = self._file.readline()
-                if line:
-                    self._handle_line(conn, line)
-                    continue
-                if self._rotated():
-                    self._file.close()
-                    self._open_file()
-                    continue
-                self._save_state(self._file.tell(), self._inode)
-                time.sleep(self.poll_interval_seconds)
-        except KeyboardInterrupt:
-            print(f"Stopping {self.source_name} collector.")
-        finally:
-            self._save_state(self._file.tell(), self._inode)
-            self._file.close()
-            conn.close()
-
     def _handle_line(self, conn, raw_line):
         raw_line = raw_line.rstrip("\n")
         if not raw_line.strip():
@@ -88,12 +103,6 @@ class BaseCollector:
         event = self.normalize(parsed, raw_line)
         if event is None:
             return
-
-        EVENT_FIELDS = [
-            "ingested_at", "event_timestamp", "source", "event_type", "severity",
-            "src_ip", "src_port", "dest_ip", "dest_port", "protocol",
-            "signature", "raw_message",
-        ]
         
         event.setdefault("ingested_at", utc_now())
         event.setdefault("source", self.source_name)

@@ -19,7 +19,7 @@ the value as the finished code.
   `requirements.txt`.
 - Initialized git, set global `user.name`/`user.email`, set up `.gitignore`
   to exclude `venv/`, `__pycache__/`, `data/collector_state.json`, and
-  `config.yaml` (the real one, with credentials — `config.o.yaml` is
+  `config.yaml` (the real one, with credentials — `config.example.yaml` is
   committed instead as a placeholder template).
 
 ## Repo skeleton
