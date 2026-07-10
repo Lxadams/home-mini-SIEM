@@ -89,6 +89,14 @@ class BaseCollector:
         if event is None:
             return
 
+        EVENT_FIELDS = [
+            "ingested_at", "event_timestamp", "source", "event_type", "severity",
+            "src_ip", "src_port", "dest_ip", "dest_port", "protocol",
+            "signature", "raw_message",
+        ]
+        
         event.setdefault("ingested_at", utc_now())
         event.setdefault("source", self.source_name)
+        for field in EVENT_FIELDS:
+            event.setdefault(field, None)
         insert_event(conn, event)
