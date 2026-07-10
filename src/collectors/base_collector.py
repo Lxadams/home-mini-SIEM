@@ -34,14 +34,14 @@ class BaseCollector:
     def _open_file(self):
         self._file = open(self.log_path, "r", encoding="utf-8", errors="replace")
         self._inode = os.fstat(self._file.fileno()).st_ino
-        if self.from_start:
+        state = self._load_state().get(str(self.log_path))
+        has_valid_state = state and state.get("inode") == self._inode
+        if has_valid_state:
+            self._file.seek(state["offset"])
+        elif self.from_start:
             self._file.seek(0)
         else:
-            state = self._load_state().get(str(self.log_path))
-            if state and state.get("inode") == self._inode:
-                self._file.seek(state["offset"])
-            else:
-                self._file.seek(0, os.SEEK_END)  # only new lines from now on
+            self._file.seek(0, os.SEEK_END)
 
     def _rotated(self):
         try:
