@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from src.collectors.base_collector import BaseCollector
 
 class SuricataCollector(BaseCollector):
@@ -15,6 +16,17 @@ class SuricataCollector(BaseCollector):
             print(f"Skipping malformed JSON line: {raw_line[:100]}")
             return None
 
+    def _parse_timestamp(self, ts_str):
+        if not ts_str:
+            return None
+        try:
+            dt = datetime.fromisoformat(ts_str)
+            if dt.tzinfo is not None:
+                dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            return dt
+        except ValueError:
+            return None
+
     def normalize(self, parsed, raw_line):
         event_type = parsed.get("event_type")
         if self.event_types_filter is not None and event_type not in self.event_types_filter:
@@ -22,7 +34,7 @@ class SuricataCollector(BaseCollector):
         alert = parsed.get("alert") or {}
 
         return {
-            "event_timestamp": parsed.get("timestamp"),
+            "event_timestamp": self._parse_timestamp(parsed.get("timestamp")),
             "event_type": event_type,
             "severity": alert.get("severity"),
             "src_ip": parsed.get("src_ip"),

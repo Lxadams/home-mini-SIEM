@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from src.db.database import get_connection, insert_event
 
-def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+def utc_now():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 class BaseCollector:
     source_name = "base"
@@ -89,6 +89,6 @@ class BaseCollector:
         if event is None:
             return
 
-        event.setdefault("ingested_at", utc_now_iso())
+        event.setdefault("ingested_at", utc_now())
         event.setdefault("source", self.source_name)
         insert_event(conn, event)
