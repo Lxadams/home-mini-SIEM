@@ -4,7 +4,6 @@ from src.collectors.base_collector import BaseCollector
 
 class SuricataCollector(BaseCollector):
     source_name = "suricata"
-
     def __init__(self, *args, event_types=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.event_types_filter = set(event_types) if event_types else None

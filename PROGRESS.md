@@ -222,11 +222,117 @@ against hand-written sample data.
 | 11 | `KeyError: b'dest_ip'` on auth_log insert | `normalize()` only populated fields relevant to that event type, insert SQL expects every column | `_handle_line()` now defaults every schema field via `EVENT_FIELDS` before insert |
 | 12 | `auth_log` collector silently never ran | `config.yaml` indentation nested `auth_log:` inside `suricata:` instead of as a sibling | Fixed YAML indentation, verified by printing parsed config structure |
 | 13 | Threaded collectors never stopped on `Ctrl+C` | Duplicate `run()` method definition silently shadowed the new `threading.Event`-based loop with the old `KeyboardInterrupt`-based one | Removed the stale duplicate method |
+| 14 | Real auth.log events never reached the database | rsyslog on this system writes ISO 8601 timestamps, regex only matched classic BSD syslog format | Added a second envelope regex for ISO format, `parse_line` tries both |
+| 15 | `KeyError: b'ingested_at'`, then `Column 'ingested_at' cannot be null` on correlation inserts | `rules.py` calls `insert_event` directly, bypassing `base_collector.py`'s schema-completeness padding | Moved default-filling into `insert_event` itself, one function every write path goes through |
+| 16 | Correlation rules re-escalated the same pattern on every run | No check for prior escalation before inserting | Added `_already_escalated()` window check before insert |
+| 17 | IP enrichment checked the wrong column for outbound alerts | Only queried `src_ip`, but outbound connections carry the external IP in `dest_ip` | Added `enrich_outbound_ips` checking `dest_ip`, `enrich_frequent_inbound_ips` checking `src_ip` with a threshold |
 
 ## Current status
 
-Phase 1 complete. Phase 2 nearly complete: Suricata deployed live,
-`auth_log` collector built and verified against real SSH/sudo events,
-`query_alerts.py` working, both collectors running concurrently via
-threading with verified clean shutdown. No remaining Phase 2 items. See
-`PLAN.md` for Phase 3.
+Phase 1 complete. Phase 2 complete. Phase 3 correlation logic and IP
+enrichment complete: two correlation rules verified against real data,
+AbuseIPDB enrichment split by direction (unconditional outbound,
+threshold-gated inbound), auto-blocking discussed and deliberately
+tabled. Deployment script in place. Suricata ruleset tuning and custom
+rules still open in Phase 3. See `PLAN.md`.
+
+## Correlation logic and IP enrichment
+
+Added `src/correlation/`, `rules.py` for correlation queries,
+`enrichment.py` for AbuseIPDB lookups.
+
+New table, `ip_reputation` (`ip` primary key, `abuse_score`,
+`is_known_bad`, `checked_at`, `raw_response`), a cache keyed by IP rather
+than an event log, since a reputation check is a lookup result tied to an
+address, not a point in time.
+
+Two rules built:
+- `rule_repeated_alerts`: more than N events from one `src_ip` within a
+  time window.
+- `rule_failed_then_success_ssh`: a failed SSH login followed by a
+  success from the same IP within a window, a self-join on `events`
+  matching `src_ip` across two rows.
+
+Both write escalations back into the same `events` table as
+`source: 'correlation'`, filtered out of their own source queries
+(`source != 'correlation'`) to avoid a feedback loop.
+
+**Bug fixed**: real `auth.log` on this system uses ISO 8601 timestamps
+with timezone offsets, not the classic BSD syslog format
+(`Jul 10 23:15:01`) the sample data and original regex were built
+against. Newer rsyslog defaults to this. `parse_line` silently matched
+nothing on real lines, so nothing reached `normalize()` and nothing landed
+in the DB, no error, just missing data. Added a second envelope regex for
+the ISO format, `parse_line` tries both. Same fix pattern as the eve.json
+timestamp issue, parse, convert to UTC, strip tzinfo.
+
+**Bug fixed**: `KeyError: b'ingested_at'` and later `Column 'ingested_at'
+cannot be null` on correlation inserts. `rules.py` builds its event dicts
+by hand and only sets the fields it actually has, missing the
+schema-completeness padding that lived in `base_collector.py`'s
+`_handle_line()`. Collectors never hit this because they always go through
+`_handle_line()`, but correlation rules call `insert_event` directly,
+bypassing that safety net entirely. Fixed properly this time by moving the
+default-filling into `insert_event` itself in `database.py`, the one
+function every write path actually goes through. `ingested_at` gets a real
+"now" default there (it's `NOT NULL` in the schema, `None` doesn't work),
+everything else defaults to `None`. `base_collector.py`'s own version of
+this logic removed since it was now duplicate work.
+
+**Bug fixed**: correlation rules re-escalated the same pattern every time
+the script ran, no memory of what had already been flagged. Four identical
+rows for one real failed-then-success login pair after four manual runs.
+Added `_already_escalated()`, checks whether a correlation event for that
+IP and event_type already exists within the window before inserting.
+Verified: three runs in a row after the fix produced exactly one row.
+
+**Verified against real data**: real SSH failed-then-success login pair
+(via `ssh $USER@localhost`, wrong password then correct) correctly caught
+by the correlation rule, escalated once, enriched against AbuseIPDB
+(127.0.0.1, score 0, correctly clean).
+
+## Enrichment direction: outbound vs inbound
+
+Initial version only checked `src_ip` on Suricata alerts. Wrong direction
+for the more interesting case, outbound connections (this host's `src_ip`
+reaching an external `dest_ip`) are where a compromised device phoning
+home would actually show up, an outbound connection doesn't look
+suspicious on its own the way an inbound scan does. The Tor-relay alert in
+sample data made this obvious, the external IP worth checking was in
+`dest_ip`, not `src_ip`.
+
+Settled on a split: `enrich_outbound_ips` checks every distinct public
+`dest_ip` from Suricata alerts, unconditionally, best signal for
+compromise. `enrich_frequent_inbound_ips` only checks a `src_ip` once it
+clears a repetition threshold (default 5 hits in 10 minutes), since a
+single inbound alert is already corroborated by the Suricata signature
+that fired, not worth an API call on its own. Both funneled through the
+same `is_public_ip()` filter (using `ipaddress.ip_address()`) so private,
+loopback, link-local, and reserved ranges never get sent to AbuseIPDB.
+
+**Verified**: generated a synthetic burst of 6 alerts from one external IP
+with live timestamps (the shipped sample data has fixed old timestamps,
+useless against a rolling time-window query), confirmed the inbound rule
+correctly stayed quiet under the threshold and correctly fired once it was
+cleared.
+
+## Auto-blocking: tabled
+
+Discussed automatically blocking IPs AbuseIPDB flags as known bad via
+iptables. Decided against building it right now. This is a single Wi-Fi
+interface with no separate management path, a bad rule risks self-lockout
+with no easy recovery besides physical access. Reputation scores also
+aren't proof, a false positive becomes a real, automatic action against
+real traffic. If revisited, the plan is dry-run mode by default, an
+explicit never-block list beyond the existing private/loopback filter, and
+every block (or would-block) logged as its own event for auditability. For
+now this stays logged-only.
+
+## Deployment script
+
+`scripts/start_all.sh`, checks whether MySQL and Suricata's systemd
+services are already running (`systemctl is-active --quiet`), starts
+whichever aren't, then runs `python3 -m src.main` in the foreground.
+Foreground on purpose, keeps the already-tested `Ctrl+C` clean-shutdown
+behavior intact rather than wrapping it in something that changes how
+signals are handled.
