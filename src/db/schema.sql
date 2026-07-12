@@ -14,6 +14,14 @@ CREATE TABLE IF NOT EXISTS events (
     raw_message     TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS ip_reputation (
+    ip           VARCHAR(45) PRIMARY KEY,
+    abuse_score  INT,
+    is_known_bad BOOLEAN,
+    checked_at   DATETIME NOT NULL,
+    raw_response TEXT
+);
+
 CREATE INDEX idx_events_src_ip    ON events (src_ip);
 CREATE INDEX idx_events_dest_ip   ON events (dest_ip);
 CREATE INDEX idx_events_timestamp ON events (event_timestamp);
