@@ -1,4 +1,5 @@
 import mysql.connector
+from datetime import datetime, timezone
 
 def get_connection(db_config: dict):
     return mysql.connector.connect(
@@ -38,8 +39,17 @@ INSERT INTO events (
 )
 """
 
+EVENT_FIELDS = [
+    "ingested_at", "event_timestamp", "source", "event_type", "severity",
+    "src_ip", "src_port", "dest_ip", "dest_port", "protocol",
+    "signature", "raw_message",
+]
 
 def insert_event(conn, event: dict) -> int:
+    event = dict(event)
+    event.setdefault("ingested_at", datetime.now(timezone.utc).replace(tzinfo=None))
+    for field in EVENT_FIELDS:
+        event.setdefault(field, None)
     cursor = conn.cursor()
     cursor.execute(INSERT_EVENT_SQL, event)
     conn.commit()

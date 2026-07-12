@@ -7,6 +7,11 @@ database:
 
 state_file: "data/collector_state.json"
 
+abuseipdb:
+  enabled: true
+  api_key: "CHANGEME"
+  cache_days: 7
+
 collectors:
   suricata:
     enabled: true

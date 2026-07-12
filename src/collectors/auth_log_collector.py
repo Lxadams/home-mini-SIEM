@@ -2,7 +2,11 @@ import re
 from datetime import datetime, timezone
 from src.collectors.base_collector import BaseCollector
 
-SYSLOG_LINE_RE = re.compile(
+SYSLOG_ISO_RE = re.compile(
+    r'^(?P<iso_timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:\d{2}|Z))\s+'
+    r'(?P<host>\S+)\s+(?P<process>\S+?)(?:\[\d+\])?:\s?(?P<message>.*)$'
+)
+SYSLOG_BSD_RE = re.compile(
     r'^(?P<month>\w{3})\s+(?P<day>\d{1,2})\s(?P<time>\d{2}:\d{2}:\d{2})\s+'
     r'(?P<host>\S+)\s+(?P<process>\S+?)(?:\[\d+\])?:\s?(?P<message>.*)$'
 )
@@ -24,12 +28,18 @@ class AuthLogCollector(BaseCollector):
     source_name = "auth_log"
 
     def parse_line(self, raw_line):
-        match = SYSLOG_LINE_RE.match(raw_line)
-        if not match:
-            return None
-        return match.groupdict()
+        match = SYSLOG_ISO_RE.match(raw_line)
+        if match:
+            return match.groupdict()
+        match = SYSLOG_BSD_RE.match(raw_line)
+        if match:
+            return match.groupdict()
+        return None
 
     def _parse_timestamp(self, parsed):
+        if parsed.get("iso_timestamp"):
+            dt = datetime.fromisoformat(parsed["iso_timestamp"])
+            return dt.astimezone(timezone.utc).replace(tzinfo=None)
         month = MONTHS.get(parsed["month"])
         if month is None:
             return None
