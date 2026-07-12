@@ -22,6 +22,27 @@ CREATE TABLE IF NOT EXISTS ip_reputation (
     raw_response TEXT
 );
 
+CREATE TABLE IF NOT EXISTS correlations (
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    created_at    DATETIME NOT NULL,
+    rule_name     VARCHAR(100) NOT NULL,
+    severity      INT NOT NULL,
+    src_ip        VARCHAR(45),
+    abuse_score   INT,
+    description   TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS correlation_events (
+    correlation_id INT NOT NULL,
+    event_id       INT NOT NULL,
+    PRIMARY KEY (correlation_id, event_id),
+    FOREIGN KEY (correlation_id) REFERENCES correlations(id) ON DELETE CASCADE,
+    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_correlations_rule_name  ON correlations (rule_name);
+CREATE INDEX idx_correlations_created_at ON correlations (created_at);
+CREATE INDEX idx_correlations_src_ip     ON correlations (src_ip);
 CREATE INDEX idx_events_src_ip    ON events (src_ip);
 CREATE INDEX idx_events_dest_ip   ON events (dest_ip);
 CREATE INDEX idx_events_timestamp ON events (event_timestamp);

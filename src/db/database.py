@@ -56,3 +56,27 @@ def insert_event(conn, event: dict) -> int:
     row_id = cursor.lastrowid
     cursor.close()
     return row_id
+
+
+def insert_correlation(conn, rule_name, severity, src_ip, abuse_score, description, event_ids):
+    """
+    Inserts a row into `correlations` and links it to the events that
+    triggered it via `correlation_events`. Returns the new correlation id.
+    """
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO correlations (created_at, rule_name, severity, src_ip, abuse_score, description)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        """,
+        (datetime.now(timezone.utc).replace(tzinfo=None), rule_name, severity, src_ip, abuse_score, description),
+    )
+    correlation_id = cursor.lastrowid
+    if event_ids:
+        cursor.executemany(
+            "INSERT IGNORE INTO correlation_events (correlation_id, event_id) VALUES (%s, %s)",
+            [(correlation_id, event_id) for event_id in event_ids],
+        )
+    conn.commit()
+    cursor.close()
+    return correlation_id

@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>mini-siem</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+    <style>
+        body { font-family: sans-serif; margin: 2rem; background: #111; color: #eee; }
+        h1, h2 { font-weight: 500; }
+        table { width: 100%; border-collapse: collapse; font-family: monospace; font-size: 0.85rem; }
+        th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #333; }
+        th { color: #999; font-weight: 500; }
+        #live-table-wrap { max-height: 320px; overflow-y: auto; margin-bottom: 2rem; }
+
+        .charts { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem; }
+        .chart-box { background: #1c1c1c; border-radius: 8px; padding: 1rem; height: 300px; position: relative; }
+        .chart-box canvas { width: 100% !important; height: 100% !important; }
+
+        @media (max-width: 900px) {
+            .charts { grid-template-columns: 1fr; }
+        }
+
+        .query-form { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1rem; }
+        .query-form input, .query-form select { background: #1c1c1c; border: 1px solid #333; color: #eee; padding: 0.4rem; border-radius: 4px; }
+        .query-form button { background: #4e8fd6; border: none; color: #fff; padding: 0.4rem 1rem; border-radius: 4px; cursor: pointer; }
+        .sev-1 { color: #ff6b6b; }
+        .sev-2 { color: #ffb86b; }
+        .sev-3 { color: #ffe66b; }
+    </style>
+</head>
+<body>
+    <h1>mini-siem</h1>
+
+    <h2>live events</h2>
+    <div id="live-table-wrap">
+        <table>
+            <thead>
+                <tr><th>time</th><th>source</th><th>type</th><th>sev</th><th>src</th><th>dest</th><th>signature</th></tr>
+            </thead>
+            <tbody id="live-table-body"></tbody>
+        </table>
+    </div>
+
+    <div class="charts">
+        <div class="chart-box"><canvas id="sourceChart"></canvas></div>
+        <div class="chart-box"><canvas id="severityChart"></canvas></div>
+        <div class="chart-box"><canvas id="topIpsChart"></canvas></div>
+    </div>
+
+    <h2>query</h2>
+    <div class="query-form">
+        <select id="q-source">
+            <option value="">any source</option>
+            <option value="suricata">suricata</option>
+            <option value="auth_log">auth_log</option>
+            <option value="correlation">correlation</option>
+        </select>
+        <input id="q-severity" type="number" placeholder="severity" min="1" max="5">
+        <input id="q-src_ip" type="text" placeholder="src ip">
+        <input id="q-dest_ip" type="text" placeholder="dest ip">
+        <input id="q-signature_contains" type="text" placeholder="signature contains...">
+        <input id="q-start" type="datetime-local">
+        <input id="q-end" type="datetime-local">
+        <button onclick="runQuery()">search</button>
+    </div>
+    <table>
+        <thead>
+            <tr><th>time</th><th>source</th><th>type</th><th>sev</th><th>src</th><th>dest</th><th>signature</th></tr>
+        </thead>
+        <tbody id="query-table-body"></tbody>
+    </table>
+
+    <script>
+        const socket = io();
+        const MAX_LIVE_ROWS = 50;
+
+        function rowHtml(event) {
+            const sevClass = event.severity ? `sev-${event.severity}` : "";
+            return `<tr class="${sevClass}">
+                <td>${event.event_timestamp ?? ""}</td>
+                <td>${event.source ?? ""}</td>
+                <td>${event.event_type ?? ""}</td>
+                <td>${event.severity ?? ""}</td>
+                <td>${event.src_ip ?? ""}</td>
+                <td>${event.dest_ip ?? ""}</td>
+                <td>${event.signature ?? ""}</td>
+            </tr>`;
+        }
+
+        const sourceChart = new Chart(document.getElementById("sourceChart"), {
+            type: "doughnut",
+            data: { labels: [], datasets: [{ data: [], backgroundColor: ["#4e8fd6", "#d64e6e", "#6ed64e", "#d6c14e"] }] },
+            options: {
+                maintainAspectRatio: false,
+                plugins: { title: { display: true, text: "events by source", color: "#eee" }, legend: { labels: { color: "#eee" } } },
+            },
+        });
+
+        const severityChart = new Chart(document.getElementById("severityChart"), {
+            type: "bar",
+            data: { labels: [], datasets: [{ label: "count", data: [], backgroundColor: "#d64e6e" }] },
+            options: {
+                maintainAspectRatio: false,
+                plugins: { title: { display: true, text: "events by severity", color: "#eee" }, legend: { display: false } },
+                scales: { x: { ticks: { color: "#aaa" } }, y: { ticks: { color: "#aaa" } } },
+            },
+        });
+
+        const topIpsChart = new Chart(document.getElementById("topIpsChart"), {
+            type: "bar",
+            data: { labels: [], datasets: [{ label: "count", data: [], backgroundColor: "#4e8fd6" }] },
+            options: {
+                indexAxis: "y",
+                maintainAspectRatio: false,
+                plugins: { title: { display: true, text: "top source IPs", color: "#eee" }, legend: { display: false } },
+                scales: { x: { ticks: { color: "#aaa" } }, y: { ticks: { color: "#aaa" } } },
+            },
+        });
+
+        function loadSummary() {
+            fetch("/api/summary")
+                .then((res) => res.json())
+                .then((data) => {
+                    sourceChart.data.labels = data.by_source.map((r) => r.source);
+                    sourceChart.data.datasets[0].data = data.by_source.map((r) => r.count);
+                    sourceChart.update();
+
+                    severityChart.data.labels = data.by_severity.map((r) => `sev ${r.severity}`);
+                    severityChart.data.datasets[0].data = data.by_severity.map((r) => r.count);
+                    severityChart.update();
+
+                    topIpsChart.data.labels = data.top_ips.map((r) => r.src_ip);
+                    topIpsChart.data.datasets[0].data = data.top_ips.map((r) => r.count);
+                    topIpsChart.update();
+                });
+        }
+
+        const liveTableBody = document.getElementById("live-table-body");
+
+        function loadInitialLiveEvents() {
+            fetch(`/api/query?limit=${MAX_LIVE_ROWS}`)
+                .then((res) => res.json())
+                .then((rows) => {
+                    liveTableBody.innerHTML = rows.map(rowHtml).join("");
+                });
+        }
+
+        socket.on("new_event", (event) => {
+            liveTableBody.insertAdjacentHTML("afterbegin", rowHtml(event));
+            while (liveTableBody.rows.length > MAX_LIVE_ROWS) {
+                liveTableBody.deleteRow(-1);
+            }
+            loadSummary();
+        });
+
+        function runQuery() {
+            const params = new URLSearchParams();
+            const fields = ["source", "severity", "src_ip", "dest_ip", "signature_contains", "start", "end"];
+            for (const field of fields) {
+                const value = document.getElementById(`q-${field}`).value;
+                if (value) params.set(field, value);
+            }
+
+            fetch(`/api/query?${params.toString()}`)
+                .then((res) => res.json())
+                .then((rows) => {
+                    document.getElementById("query-table-body").innerHTML = rows.map(rowHtml).join("");
+                });
+        }
+
+        loadSummary();
+        loadInitialLiveEvents();
+    </script>
+</body>
+</html>

@@ -16,7 +16,7 @@ collectors:
   suricata:
     enabled: true
     eve_json_path: "/var/log/suricata/eve.json"
-    #eve_json_path: "tests/sample_eve.json"
+    #eve_json_path: "tests/sample_eve_burst.json"
     event_types: ["alert"]
     poll_interval_seconds: 1.0
     from_start: false
@@ -26,4 +26,20 @@ collectors:
     path: "/var/log/auth.log"
     #path: "tests/sample_auth.log"
     poll_interval_seconds: 1.0
-    from_start: true
+    from_start: false
+
+correlation:
+  interval_seconds: 60
+  rules:
+    repeated_alerts:
+      threshold: 5
+      window_minutes: 10
+    failed_then_success_login:
+      min_failed_attempts: 3
+      window_minutes: 10
+    port_scan:
+      distinct_ports_threshold: 15
+      window_minutes: 5
+    ddos:
+      distinct_src_threshold: 20
+      window_minutes: 2
