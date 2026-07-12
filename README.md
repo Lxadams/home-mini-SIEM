@@ -12,18 +12,32 @@ project alongside TryHackMe's SOC Level 1 path.
 
 Two log sources, a live Suricata IDS sensor and this host's own
 `/var/log/auth.log`, run concurrently in separate threads, normalize into a
-shared schema, and land in the same MySQL table. Correlation rules run
-against that table to catch patterns (repeated alerts from one IP, failed
-SSH followed by success), and flagged IPs get checked against AbuseIPDB,
-cached locally so repeat checks don't burn API quota. See `PROGRESS.md` for
-the detailed build log and `PLAN.md` for what's left.
+shared schema, and land in the same MySQL table. A background thread runs
+four correlation rules automatically (repeated alerts, failed-then-success
+SSH logins, port scans, distinct-source floods), writing results into
+their own `correlations` table linked back to the specific events that
+triggered them. Flagged IPs get checked against AbuseIPDB, cached locally.
+A Flask + websocket dashboard shows correlations live, with raw events as
+a drill-down/investigation view. See `PROGRESS.md` for the detailed build
+log and `PLAN.md` for what's left.
 
 ## Architecture
 
 ```
 Suricata (eve.json)  --> SuricataCollector --\
-                                               +--> MySQL (events table) --> correlation rules --> ip_reputation (AbuseIPDB cache)
-/var/log/auth.log     --> AuthLogCollector  --/
+                                               +--> MySQL (events table)
+/var/log/auth.log     --> AuthLogCollector  --/                |
+                                                                 v
+                                          correlation rules (background thread)
+                                                                 |
+                                                                 v
+                                  correlations + correlation_events (linked to source events)
+                                                                 |
+                                                                 v
+                                        ip_reputation (AbuseIPDB cache) <--
+                                                                 |
+                                                                 v
+                                          Flask + websocket dashboard (correlations first, events as drill-down)
 ```
 
 Both collectors run as separate threads within one process (`src/main.py`),
@@ -33,9 +47,18 @@ cross-source correlation possible: "did the IP that triggered a Suricata
 alert also fail an SSH login?" becomes one SQL query instead of a join
 across differently shaped tables.
 
-Correlation rules (`src/correlation/rules.py`) run separately, on demand
-via `scripts/run_correlation.py`, querying the shared table for patterns
-and writing escalations back into it as `source: 'correlation'` events.
+Correlation rules (`src/correlation/rules.py`) run automatically on a
+configurable interval via a background thread, or on demand via
+`scripts/run_correlation.py`, both going through the same
+`run_correlation_cycle()` (`src/correlation/runner.py`) so there's one
+implementation, not two that could drift apart. Each match is a row in
+`correlations`, linked to the specific `events` rows that triggered it via
+`correlation_events`, a many to many join table, some correlations
+(distinct-source floods) legitimately involve dozens of events. Severity
+is computed per match (`src/correlation/severity.py`) against a defined
+4-level scale (1 critical to 4 informational), escalated if the IP
+involved has a cached bad reputation.
+
 Flagged IPs get checked against AbuseIPDB (`src/correlation/enrichment.py`),
 with results cached in a separate `ip_reputation` table so the same IP
 isn't re-checked within the cache window. Outbound alert destinations are
@@ -53,11 +76,11 @@ Each collector:
 3. Normalizes it into the shared schema (see `src/db/schema.sql`)
 4. Inserts it into MySQL
 
-The main process starts one thread per enabled collector and coordinates
-clean shutdown. `Ctrl+C` signals every collector to stop via a shared
-`threading.Event`, then waits for each thread to actually finish (flushing
-its saved offset) before exiting. Verified to leave no orphaned background
-processes.
+The main process starts one thread per enabled collector plus the
+correlation thread, and coordinates clean shutdown. `Ctrl+C` signals all
+of them to stop via a shared `threading.Event`, then waits for each thread
+to actually finish (flushing offsets where relevant) before exiting.
+Verified to leave no orphaned background processes.
 
 ## Repo layout
 
@@ -73,25 +96,36 @@ mini-siem/
 │   └── config.example.yaml    # committed, placeholder values, documents required shape
 ├── src/
 │   ├── config.py              # loads config.yaml
-│   ├── main.py                 # entry point: builds enabled collectors, runs them as threads
+│   ├── main.py                 # entry point: builds collectors + correlation thread, runs them
 │   ├── db/
-│   │   ├── schema.sql         # events + ip_reputation tables, indexes
+│   │   ├── schema.sql         # events, correlations, correlation_events, ip_reputation
 │   │   └── database.py        # connection, schema init, insert helpers
 │   ├── collectors/
 │   │   ├── base_collector.py      # generic tail/rotation/offset/threading logic
 │   │   ├── suricata_collector.py  # eve.json-specific parsing + normalization
 │   │   └── auth_log_collector.py  # auth.log-specific parsing + normalization
 │   └── correlation/
-│       ├── rules.py               # correlation queries over the events table
-│       └── enrichment.py          # AbuseIPDB lookups + local caching
+│       ├── config.py              # loads correlation.* config with sane defaults
+│       ├── rules.py               # the four correlation rules
+│       ├── severity.py            # base severity per rule + reputation-based escalation
+│       ├── enrichment.py          # AbuseIPDB lookups + local caching
+│       └── runner.py              # run_correlation_cycle(), shared by script + background thread
 ├── scripts/
-│   ├── query_alerts.py        # CLI report over the combined events table
-│   ├── run_correlation.py     # runs correlation rules + IP enrichment
-│   └── start_all.sh           # starts mysql, suricata, and collectors
+│   ├── query_alerts.py                     # CLI report over the combined events table
+│   ├── run_correlation.py                  # manual one-off correlation run
+│   ├── generate_correlation_test_data.py   # fresh-timestamped test data for all four rules
+│   ├── start_all.sh                        # starts mysql, suricata, dashboard, collectors
+│   └── end_all.sh                          # stops dashboard + any leftover collector process
+├── dashboard/
+│   ├── app.py                  # Flask + Flask-SocketIO app, DB polling thread, API routes
+│   ├── templates/index.html    # correlations (live) + charts + events (investigate)
+│   └── static/                 # (currently inline in index.html, split out if it grows)
 ├── tests/
-│   ├── sample_eve.json        # hand-crafted realistic eve.json lines
-│   └── sample_auth.log        # hand-crafted realistic auth.log lines
-└── data/                       # gitignored, collector_state.json (offset tracking) lives here
+│   ├── sample_eve.json                        # hand-crafted realistic eve.json lines
+│   ├── sample_auth.log                        # hand-crafted realistic auth.log lines
+│   ├── sample_eve_correlation_test.json       # generated, fresh timestamps, see script above
+│   └── sample_auth_correlation_test.log       # generated, fresh timestamps, see script above
+└── data/                       # gitignored, collector_state.json + dashboard.pid live here
 ```
 
 ## Setup
@@ -165,8 +199,17 @@ abuseipdb:
 ```bash
 ./scripts/start_all.sh
 ```
-Starts MySQL and Suricata if they're not already running, then starts the
-collectors in the foreground. `Ctrl+C` stops everything cleanly.
+Starts MySQL and Suricata if not already running, then the dashboard
+(backgrounded, PID saved to `data/dashboard.pid`), then collectors and the
+correlation thread in the foreground. `Ctrl+C` stops the foreground
+process cleanly.
+
+```bash
+./scripts/end_all.sh
+```
+Stops the backgrounded dashboard, and as a safety net, sends a clean
+shutdown signal to any leftover collector process if `Ctrl+C` wasn't used
+directly. Leaves `mysql`/`suricata` system services running.
 
 Or manually:
 ```bash
@@ -182,8 +225,17 @@ breakdown, top source IPs, most recent events.
 ```bash
 python3 scripts/run_correlation.py
 ```
-runs correlation rules against the events table, escalates matches, and
-enriches flagged/outbound IPs against AbuseIPDB.
+runs all correlation rules once and enriches flagged/outbound IPs against
+AbuseIPDB. Runs automatically on an interval too (`correlation.
+interval_seconds` in config), this is for a manual one-off run.
+
+```bash
+python3 dashboard/app.py
+```
+starts the dashboard directly (normally started by `start_all.sh`
+instead). Correlations shown live at the top, charts below, raw events
+available as a filterable investigation view, click any correlation to
+see exactly which events triggered it.
 
 ## Design notes
 
@@ -195,11 +247,24 @@ enriches flagged/outbound IPs against AbuseIPDB.
   join across mismatched schemas. Proven out concretely once two
   differently formatted sources (JSON vs. plaintext syslog) both normalize
   into the same table and show up in one combined report.
-- **Why correlation writes back into the same `events` table** instead of
-  a separate table: a correlation match is just another kind of event
-  (`source: 'correlation'`), queryable the same way as everything else,
-  with a `source != 'correlation'` filter in the rules themselves to avoid
-  a feedback loop where escalations count toward their own trigger.
+- **Why correlations live in their own tables (`correlations` +
+  `correlation_events`) instead of being written back into `events`**: a
+  correlation isn't an event, it's a relationship between several events
+  that already happened. The join table keeps the actual link, which
+  specific rows triggered a given correlation, queryable and real, instead
+  of implicit in whatever a rule's query happened to match at the time.
+  Also removes a feedback-loop risk structurally rather than needing a
+  filter to guard against it, there's nothing for a correlation to
+  accidentally count toward once it's not in the same table it reads from.
+- **Why severity is computed, not hardcoded per rule**: each rule has a
+  base severity on a defined 4-level scale, escalated one level if the IP
+  involved has a cached bad reputation. Severity reflects what's actually
+  known at the time a correlation fires, not a static guess.
+- **Why dedup checks exact event-id overlap instead of a time window**:
+  precise rather than approximate, a correlation only counts as a repeat
+  if it's tied to the literal same triggering rows, not just "same IP,
+  roughly recently." Verified to survive a genuine mid-run script crash
+  without creating duplicate correlations on retry.
 - **Why AbuseIPDB results are cached in their own table**: reputation
   lookups aren't events, they're a lookup result tied to an IP, not a point
   in time. `ip_reputation` has `ip` as the primary key, one row per IP,
@@ -244,9 +309,9 @@ enriches flagged/outbound IPs against AbuseIPDB.
 - **Why parameterized queries instead of string-built SQL**: SQL injection
   prevention. Direct application of COMPX317 material.
 - **No auto-blocking yet**: AbuseIPDB "known bad" results are logged, not
-  acted on. Automated firewall changes on a single interface home network
-  carry risk of self lockout, and reputation scores aren't proof,
+  acted on. Automated firewall changes on a single-interface home network
+  carry real risk of self-lockout, and reputation scores aren't proof,
   tabled until there's a safer rollout plan (dry-run mode, explicit
   never-block list, auditable logging of every action).
-- **No ML yet, on purpose**: anomaly detection is gated behind
-  finishing or progressing COMPX310.
+- **No ML yet, on purpose**: anomaly detection is explicitly gated behind
+  finishing COMPX310.

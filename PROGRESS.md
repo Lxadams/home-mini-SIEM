@@ -229,12 +229,18 @@ against hand-written sample data.
 
 ## Current status
 
-Phase 1 complete. Phase 2 complete. Phase 3 correlation logic and IP
-enrichment complete: two correlation rules verified against real data,
-AbuseIPDB enrichment split by direction (unconditional outbound,
-threshold-gated inbound), auto-blocking discussed and deliberately
-tabled. Deployment script in place. Suricata ruleset tuning and custom
-rules still open in Phase 3. See `PLAN.md`.
+Phase 1 complete. Phase 2 complete. Phase 3 correlation logic complete and
+restructured: correlations and correlation_events tables, four rules
+(repeated_alerts, failed_then_success_login, port_scan, ddos), a defined
+4-level severity scale with IP-reputation-based escalation, config-driven
+thresholds, and a background thread running correlation automatically
+rather than only on manual invocation. Phase 4 dashboard underway:
+realtime websocket feed, three summary charts, a query/investigation view,
+and correlations now the primary live view with drill-down into linked
+events. Deployment scripts (start_all.sh, end_all.sh) cover MySQL,
+Suricata, the dashboard, and the collector/correlation process together.
+Suricata ruleset tuning and severity remapping still open in Phase 3. See
+`PLAN.md`.
 
 ## Correlation logic and IP enrichment
 
@@ -336,3 +342,163 @@ whichever aren't, then runs `python3 -m src.main` in the foreground.
 Foreground on purpose, keeps the already-tested `Ctrl+C` clean-shutdown
 behavior intact rather than wrapping it in something that changes how
 signals are handled.
+
+## Correlation restructure: separate tables
+
+Correlation results moved out of `events` entirely into two new tables,
+`correlations` (one row per detected pattern, rule name, severity,
+src_ip, abuse_score, description) and `correlation_events` (a many to
+many join table linking each correlation to the actual event rows that
+triggered it).
+
+Reasoning: a correlation isn't an event, it's a relationship between
+several events that already happened. Storing it as another `events` row
+with `source: 'correlation'` worked but lost the actual link, which
+specific rows caused it only existed implicitly in whatever a rule's
+`WHERE` clause matched at the time, not stored anywhere. The join table
+makes that link real and queryable.
+
+This also structurally removed the feedback loop problem that the earlier
+`source != 'correlation'` filter existed to patch around. With
+correlations in their own table, there's nothing for a correlation to
+accidentally count toward, the whole bug category is gone rather than
+guarded against.
+
+Dedup logic changed to match: the old `_already_escalated()` guessed
+duplication from a time window on src_ip and event_type. New
+`_already_correlated()` checks whether the actual triggering event_ids
+are already linked to a correlation of that rule name, exact overlap, not
+a time guess.
+
+**Known tradeoff, not a bug**: exact event-id matching means a correlation
+can re-fire on what looks like "the same" pattern if the rolling time
+window shifts which exact rows are included between runs (seen on static,
+one-time-burst test data, aging out of a window differently between two
+runs a few minutes apart). Expected to self-resolve on live, continuously
+flowing traffic, old alerts age out and new ones age in symmetrically.
+Confirmed as the cause, not fixed, low priority on real data.
+
+## Severity scale defined
+
+Settled on a 4-level scale, low number is worse:
+
+| Level | Meaning |
+|---|---|
+| 1 | Critical, confirmed or highly likely compromise/active attack |
+| 2 | High, strong indicator, needs review soon |
+| 3 | Medium, worth knowing about, not urgent |
+| 4 | Low, informational |
+
+`src/correlation/severity.py` added. Each rule has a base severity
+(`RULE_BASE_SEVERITY`), `compute_severity()` escalates one level (capped
+at 1) if the IP involved has a cached `is_known_bad` result in
+`ip_reputation`. No IP given (the ddos rule has no single attacker) or no
+cached reputation yet both fall back to the rule's base severity.
+
+**Bug fixed**: `compute_severity` had an inconsistent return shape across
+its branches, one path returned a bare int instead of the `(severity,
+score)` tuple every caller expects. Only surfaced when `rule_ddos` called
+it with `ip=None`, the one path that had never actually been exercised
+until real testing hit it. `TypeError: cannot unpack non-iterable int
+object`. Rewrote with all three cases (no ip, ip never checked, ip
+checked) explicitly returning the same 2-tuple shape.
+
+**Note for later**: raw `events.severity` for Suricata rows is still
+Suricata's own native 1-3 scale, not yet remapped onto this 4-level scale.
+Only `correlations.severity` is on the new scale so far. Suricata rule
+severity mapping is still an open task.
+
+## Two new correlation rules, plus one rewritten
+
+- `rule_port_scan`: one src_ip touching N distinct dest_ports within a
+  window, `COUNT(DISTINCT dest_port)`, not raw alert count, since a real
+  scan is about port variety, not volume.
+- `rule_ddos`: one dest_ip receiving traffic from N distinct src_ips
+  within a short window. Noted as unlikely to ever legitimately fire on
+  this setup, single home sensor watching one host's Wi-Fi, no
+  publicly reachable service to actually be DDoSed. Built and tested
+  anyway for completeness and to understand the pattern, not expected to
+  see real positives here.
+- `rule_failed_then_success_ssh` rewritten to require a configurable
+  minimum number of failed attempts (default 3) before a following
+  success counts, rather than firing on any single failure. One typo
+  isn't suspicious, several followed by success is.
+
+All thresholds and window sizes moved into `config.yaml` under
+`correlation.rules`, previously hardcoded function defaults.
+
+**Naming caveat, not fixed**: `correlations.src_ip` holds the dest_ip for
+the ddos rule (the target, not an attacker), reusing that column for
+schema consistency across rules. Semantically a little confusing to read
+later, flagged but not renamed yet.
+
+## Test data generator
+
+`scripts/generate_correlation_test_data.py`, writes fresh eve.json and
+auth.log lines with current timestamps at generation time, needed because
+all four rules query against rolling time windows from `UTC_TIMESTAMP()`,
+static sample data with fixed old timestamps can't exercise them. Covers
+all four rules with distinct IPs per scenario so results are unambiguous.
+
+**Verified**: all four rules fired correctly against generated data,
+correctly linked to the right event rows in `correlation_events`
+(counts matched exactly, 6/16/5/44 events per correlation as expected).
+A mid-run crash (the compute_severity bug above) partway through
+`run_all_rules` left 3 of 4 correlations already inserted before the
+script died. Rerunning after the fix correctly recognized those 3 as
+already existing via `_already_correlated` and only created the missing
+4th, real evidence the dedup design survives a genuine partial failure
+without creating duplicates or requiring manual cleanup.
+
+## Automatic correlation
+
+`src/correlation/runner.py` added, `run_correlation_cycle()` is now the
+one implementation of "run all rules, then enrich," used by both
+`scripts/run_correlation.py` (manual) and a new background thread in
+`main.py` (automatic). Avoids having two copies of the same logic that
+could drift apart.
+
+`CorrelationThread` in `main.py` follows the same `threading.Event`
+stop-signal pattern the collectors already use, so `Ctrl+C` stops it
+cleanly alongside them, no new shutdown logic needed. Runs on a
+configurable interval (`correlation.interval_seconds`, default 60s),
+each cycle wrapped in its own try/except so one bad cycle (e.g. an
+AbuseIPDB timeout) logs and waits for the next interval rather than
+silently killing the thread for the rest of the run.
+
+**Reused fix, applied preemptively this time**: `CorrelationThread` holds
+one long-lived DB connection, same shape as the dashboard's polling
+connection that hit the stale-snapshot bug earlier (default MySQL
+isolation level means a long-lived connection stops seeing new commits
+from other connections). Set `conn.autocommit = True` from the start here
+instead of waiting to rediscover the same bug a third time.
+
+## Deployment scripts
+
+`scripts/start_all.sh` extended to also start the dashboard, backgrounded
+via `nohup ... &` with its PID saved to `data/dashboard.pid` and output
+redirected to `logs/dashboard.log`. Collectors and the correlation thread
+stay in the foreground, same tested `Ctrl+C` shutdown as before.
+
+New `scripts/end_all.sh`: stops the backgrounded dashboard via its saved
+PID, and as a safety net, finds any leftover `python3 -m src.main`
+process and sends it `SIGINT` specifically (`kill -INT`, not a bare
+`kill`), since the collectors' clean shutdown depends on catching
+`KeyboardInterrupt`, which only `SIGINT` triggers in Python by default. A
+plain `kill` would send `SIGTERM` instead and bypass the tested
+shutdown path entirely, no offset flush, no thread joins. `mysql` and
+`suricata` system services deliberately left running, not torn down
+every session.
+
+## Dashboard: correlations as primary view
+
+Reworked to put the correlations table first and make it the live-updating
+default view, with the existing raw events table repurposed as an
+investigation/drill-down view rather than the main display. Clicking a
+correlation row fetches its linked events via a new
+`/api/correlations/<id>/events` endpoint and populates that table.
+
+New backend: `poll_for_new_events` now tracks `correlations` in addition
+to `events`, emitting a separate `new_correlation` websocket event so the
+frontend can distinguish the two. `/api/correlations` mirrors the existing
+`/api/query` pattern for initial load.

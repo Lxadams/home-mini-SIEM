@@ -5,14 +5,26 @@ RULE_BASE_SEVERITY = {
     "ddos": 1,
 }
 
+
 def compute_severity(conn, rule_name, ip):
+    """
+    Returns (severity, abuse_score). abuse_score is None if no IP was
+    given, or if the IP hasn't been checked against AbuseIPDB yet.
+    """
     base = RULE_BASE_SEVERITY[rule_name]
+
     if not ip:
-        return base
+        return base, None
+
     cursor = conn.cursor()
     cursor.execute("SELECT is_known_bad, abuse_score FROM ip_reputation WHERE ip = %s", (ip,))
     row = cursor.fetchone()
     cursor.close()
-    if row and row[0]:  # is_known_bad
-        return max(1, base - 1), row[1]  # escalate one level, capped at 1
-    return base, (row[1] if row else None)
+
+    if not row:
+        return base, None
+
+    is_known_bad, abuse_score = row
+    if is_known_bad:
+        return max(1, base - 1), abuse_score
+    return base, abuse_score

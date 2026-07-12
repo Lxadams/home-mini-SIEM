@@ -1,0 +1,34 @@
+Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+ * Serving Flask app 'app'
+ * Debug mode: on
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.20.8:5000
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [13/Jul/2026 00:45:31] "GET /socket.io/?EIO=4&transport=polling&t=PzMN8Ef HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jul/2026 00:45:31] "POST /socket.io/?EIO=4&transport=polling&t=PzMN8Ek&sid=ulp9DlqXio84r3k5AAAA HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jul/2026 00:45:31] "GET /socket.io/?EIO=4&transport=polling&t=PzMN8Ek.0&sid=ulp9DlqXio84r3k5AAAA HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jul/2026 00:45:31] "GET /socket.io/?EIO=4&transport=polling&t=PzMN8Eo&sid=ulp9DlqXio84r3k5AAAA HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jul/2026 00:45:33] "GET /socket.io/?EIO=4&transport=websocket&sid=ulp9DlqXio84r3k5AAAA HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jul/2026 00:45:33] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jul/2026 00:45:33] "GET /socket.io/?EIO=4&transport=polling&t=PzMN8ld HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jul/2026 00:45:33] "GET /api/correlations?limit=50 HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jul/2026 00:45:33] "GET /api/summary HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jul/2026 00:45:33] "POST /socket.io/?EIO=4&transport=polling&t=PzMN8ly&sid=rvhBgwTuz2Bc_1adAAAC HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jul/2026 00:45:33] "GET /socket.io/?EIO=4&transport=polling&t=PzMN8ly.0&sid=rvhBgwTuz2Bc_1adAAAC HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jul/2026 00:45:33] "GET /socket.io/?EIO=4&transport=polling&t=PzMN8mM&sid=rvhBgwTuz2Bc_1adAAAC HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jul/2026 00:45:42] "GET /api/correlations/6/events HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jul/2026 00:45:45] "GET /api/correlations/6/events HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jul/2026 00:45:45] "GET /api/correlations/6/events HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jul/2026 00:45:45] "GET /api/correlations/6/events HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jul/2026 00:45:46] "GET /api/correlations/6/events HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jul/2026 00:45:46] "GET /api/correlations/6/events HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jul/2026 00:45:48] "GET /api/correlations/6/events HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jul/2026 00:45:49] "GET /api/correlations/6/events HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jul/2026 00:46:38] "GET /api/correlations/5/events HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jul/2026 00:46:43] "GET /api/correlations/6/events HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jul/2026 00:46:47] "GET /api/correlations/5/events HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jul/2026 00:46:51] "GET /api/correlations/3/events HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jul/2026 00:47:38] "GET /api/correlations/4/events HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jul/2026 00:48:51] "GET /api/query?severity=4 HTTP/1.1" 200 -

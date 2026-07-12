@@ -3,6 +3,7 @@ set -e
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
+mkdir -p data logs
 
 echo "Checking MySQL..."
 if ! systemctl is-active --quiet mysql; then
@@ -25,6 +26,16 @@ if [ ! -d "venv" ]; then
     exit 1
 fi
 
-echo "Starting collectors (Ctrl+C to stop)..."
 source venv/bin/activate
+
+if [ -f "data/dashboard.pid" ] && kill -0 "$(cat data/dashboard.pid)" 2>/dev/null; then
+    echo "Dashboard already running (PID $(cat data/dashboard.pid))"
+else
+    echo "Starting dashboard in background..."
+    nohup python3 dashboard/app.py > logs/dashboard.log 2>&1 &
+    echo $! > data/dashboard.pid
+    echo "  dashboard PID $(cat data/dashboard.pid), logs at logs/dashboard.log"
+fi
+
+echo "Starting collectors + correlation (Ctrl+C to stop)..."
 python3 -m src.main

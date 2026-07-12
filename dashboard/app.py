@@ -81,35 +81,90 @@ def summary():
     })
 
 def poll_for_new_events():
-    print("poll_for_new_events: starting up", flush=True)
+    conn = get_connection(config["database"])
+    conn.autocommit = True
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("SELECT MAX(id) AS max_id FROM events")
+    last_event_id = cursor.fetchone()["max_id"] or 0
+
+    cursor.execute("SELECT MAX(id) AS max_id FROM correlations")
+    last_correlation_id = cursor.fetchone()["max_id"] or 0
+
     try:
-        conn = get_connection(config["database"])
-        conn.autocommit = True
-        cursor = conn.cursor(dictionary=True)
-
-        cursor.execute("SELECT MAX(id) AS max_id FROM events")
-        last_seen_id = cursor.fetchone()["max_id"] or 0
-        print(f"poll_for_new_events: connected, starting from id={last_seen_id}", flush=True)
-
         while True:
             cursor.execute(
                 "SELECT id, event_timestamp, source, event_type, severity, "
                 "src_ip, dest_ip, signature FROM events WHERE id > %s ORDER BY id ASC",
-                (last_seen_id,),
+                (last_event_id,),
             )
-            new_rows = cursor.fetchall()
-            print(f"poll tick, last_seen_id={last_seen_id}, found {len(new_rows)} new row(s)", flush=True)
-
-            for row in new_rows:
+            for row in cursor.fetchall():
                 row["event_timestamp"] = str(row["event_timestamp"])
                 socketio.emit("new_event", row)
-                last_seen_id = row["id"]
+                last_event_id = row["id"]
+
+            cursor.execute(
+                "SELECT id, created_at, rule_name, severity, src_ip, abuse_score, description "
+                "FROM correlations WHERE id > %s ORDER BY id ASC",
+                (last_correlation_id,),
+            )
+            for row in cursor.fetchall():
+                row["created_at"] = str(row["created_at"])
+                socketio.emit("new_correlation", row)
+                last_correlation_id = row["id"]
 
             time.sleep(1)
     except Exception:
-        print("poll_for_new_events: CRASHED", flush=True)
+        import traceback
+        print("poll_for_new_events crashed:")
         traceback.print_exc()
 
+@app.route("/api/correlations")
+def get_correlations():
+    from flask import request
+
+    conn = get_connection(config["database"])
+    cursor = conn.cursor(dictionary=True)
+
+    limit = min(int(request.args.get("limit", 50)), 200)
+
+    cursor.execute(
+        "SELECT id, created_at, rule_name, severity, src_ip, abuse_score, description "
+        "FROM correlations ORDER BY id DESC LIMIT %s",
+        (limit,),
+    )
+    rows = cursor.fetchall()
+    for row in rows:
+        row["created_at"] = str(row["created_at"])
+
+    cursor.close()
+    conn.close()
+    return jsonify(rows)
+
+
+@app.route("/api/correlations/<int:correlation_id>/events")
+def get_correlation_events(correlation_id):
+    conn = get_connection(config["database"])
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute(
+        """
+        SELECT e.id, e.event_timestamp, e.source, e.event_type, e.severity,
+                e.src_ip, e.dest_ip, e.signature
+        FROM events e
+        JOIN correlation_events ce ON ce.event_id = e.id
+        WHERE ce.correlation_id = %s
+        ORDER BY e.event_timestamp ASC
+        """,
+        (correlation_id,),
+    )
+    rows = cursor.fetchall()
+    for row in rows:
+        row["event_timestamp"] = str(row["event_timestamp"])
+
+    cursor.close()
+    conn.close()
+    return jsonify(rows)
 
 @app.route("/")
 def index():
@@ -118,4 +173,4 @@ def index():
 
 if __name__ == "__main__":
     socketio.start_background_task(poll_for_new_events)
-    socketio.run(app, host="0.0.0.0", port=5000, debug=True, use_reloader=False)
+    socketio.run(app, host="0.0.0.0", port=5000, debug=True, use_reloader=False, allow_unsafe_werkzeug=True)
