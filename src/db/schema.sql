@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS events (
     dest_port       INT,
     protocol        VARCHAR(10),
     signature       VARCHAR(255),
+    category        VARCHAR(100),
     raw_message     TEXT NOT NULL
 );
 

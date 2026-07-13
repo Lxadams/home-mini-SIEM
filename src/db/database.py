@@ -32,17 +32,18 @@ def init_db(db_config: dict, schema_path: str) -> None:
 INSERT_EVENT_SQL = """
 INSERT INTO events (
     ingested_at, event_timestamp, source, event_type, severity,
-    src_ip, src_port, dest_ip, dest_port, protocol, signature, raw_message
+    src_ip, src_port, dest_ip, dest_port, protocol, signature, category, raw_message
 ) VALUES (
     %(ingested_at)s, %(event_timestamp)s, %(source)s, %(event_type)s, %(severity)s,
-    %(src_ip)s, %(src_port)s, %(dest_ip)s, %(dest_port)s, %(protocol)s, %(signature)s, %(raw_message)s
+    %(src_ip)s, %(src_port)s, %(dest_ip)s, %(dest_port)s, %(protocol)s, %(signature)s, 
+    %(category)s, %(raw_message)s
 )
 """
 
 EVENT_FIELDS = [
     "ingested_at", "event_timestamp", "source", "event_type", "severity",
     "src_ip", "src_port", "dest_ip", "dest_port", "protocol",
-    "signature", "raw_message",
+    "signature", "category", "raw_message",
 ]
 
 def insert_event(conn, event: dict) -> int:
