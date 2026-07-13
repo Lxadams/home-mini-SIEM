@@ -16,7 +16,7 @@ collectors:
   suricata:
     enabled: true
     eve_json_path: "/var/log/suricata/eve.json"
-    #eve_json_path: "tests/sample_eve_burst.json"
+    #eve_json_path: "tests/sample_eve_correlation_test.json"
     event_types: ["alert"]
     poll_interval_seconds: 1.0
     from_start: false
@@ -24,7 +24,7 @@ collectors:
   auth_log:
     enabled: true
     path: "/var/log/auth.log"
-    #path: "tests/sample_auth.log"
+    #path: "tests/sample_auth_correlation_test.log"
     poll_interval_seconds: 1.0
     from_start: false
 
