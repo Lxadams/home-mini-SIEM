@@ -4,7 +4,7 @@ import time
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from src.db.database import get_connection, insert_event
+from src.db.database import get_connection, insert_event, insert_network_event
 
 def utc_now():
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -97,6 +97,12 @@ class BaseCollector:
         event = self.normalize(parsed, raw_line)
         if event is None:
             return
-        
+
         event.setdefault("source", self.source_name)
-        insert_event(conn, event)
+        target = event.pop("_target", "events")
+        if target == "events":
+            insert_event(conn, event)
+        elif target == "network_events":
+            insert_network_event(conn, event)
+        else:
+            raise ValueError(f"Unknown insert target from {self.source_name}.normalize(): {target!r}")

@@ -80,6 +80,113 @@ def summary():
         "top_ips": top_ips,
     })
 
+@app.route("/api/timeseries")
+def timeseries():
+    from flask import request
+    conn = get_connection(config["database"])
+    cursor = conn.cursor(dictionary=True)
+
+    # Bounded so a careless query param can't ask for an absurd window or
+    # a bucket small enough to return a huge number of rows.
+    minutes = min(max(int(request.args.get("minutes", 60)), 1), 1440)
+    bucket_seconds = min(max(int(request.args.get("bucket_seconds", 60)), 10), 3600)
+
+    # Bucketed by source rather than severity - auth_log events don't
+    # currently get a severity assigned (only Suricata rows do, via
+    # suricata_severity.py), so grouping by severity would silently drop
+    # auth_log volume from this chart entirely. source is populated on
+    # every row regardless of collector.
+    cursor.execute(
+        """
+        SELECT
+            FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(event_timestamp) / %s) * %s) AS bucket,
+            source,
+            COUNT(*) AS count
+        FROM events
+        WHERE event_timestamp >= UTC_TIMESTAMP() - INTERVAL %s MINUTE
+        GROUP BY bucket, source
+        ORDER BY bucket ASC
+        """,
+        (bucket_seconds, bucket_seconds, minutes),
+    )
+    rows = cursor.fetchall()
+    for row in rows:
+        row["bucket"] = str(row["bucket"])
+
+    cursor.close()
+    conn.close()
+    return jsonify(rows)
+
+NETWORK_FILTERABLE_COLUMNS = {"source", "event_type", "src_ip", "dest_ip"}
+
+@app.route("/api/network/activity")
+def network_activity():
+    # Reads network_activity_summary, NOT network_events - this is the
+    # aggregate (one row per src/dest/type combo, with a count), not the
+    # raw TTL-pruned firehose. That's deliberate: the whole point of the
+    # summary table is that this endpoint never has to return "35
+    # duplicate broadcasts to the same place" as 35 separate rows.
+    from flask import request
+    conn = get_connection(config["database"])
+    cursor = conn.cursor(dictionary=True)
+
+    where_clauses = []
+    params = []
+    for column in NETWORK_FILTERABLE_COLUMNS:
+        value = request.args.get(column)
+        if value:
+            where_clauses.append(f"{column} = %s")
+            params.append(value)
+    detail_search = request.args.get("detail_contains")
+    if detail_search:
+        where_clauses.append("detail LIKE %s")
+        params.append(f"%{detail_search}%")
+    where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+
+    limit = min(int(request.args.get("limit", 200)), 500)
+    cursor.execute(
+        f"SELECT id, source, event_type, src_ip, dest_ip, dest_port, protocol, "
+        f"detail, count, first_seen, last_seen FROM network_activity_summary "
+        f"WHERE {where_sql} ORDER BY last_seen DESC LIMIT %s",
+        (*params, limit),
+    )
+    rows = cursor.fetchall()
+    for row in rows:
+        row["first_seen"] = str(row["first_seen"])
+        row["last_seen"] = str(row["last_seen"])
+
+    cursor.close()
+    conn.close()
+    return jsonify(rows)
+
+@app.route("/api/network/charts")
+def network_charts():
+    conn = get_connection(config["database"])
+    cursor = conn.cursor(dictionary=True)
+
+    # SUM(count), not COUNT(*) - a chart built on row counts here would
+    # undercount badly, since each row already represents many real
+    # events collapsed together.
+    cursor.execute(
+        "SELECT event_type, SUM(count) AS total FROM network_activity_summary "
+        "GROUP BY event_type"
+    )
+    by_type = cursor.fetchall()
+
+    cursor.execute(
+        "SELECT src_ip, SUM(count) AS total FROM network_activity_summary "
+        "WHERE src_ip IS NOT NULL AND src_ip != '' "
+        "GROUP BY src_ip ORDER BY total DESC LIMIT 10"
+    )
+    top_talkers = cursor.fetchall()
+
+    cursor.close()
+    conn.close()
+    return jsonify({
+        "by_type": by_type,
+        "top_talkers": top_talkers,
+    })
+
 def poll_for_new_events():
     conn = get_connection(config["database"])
     conn.autocommit = True

@@ -81,3 +81,56 @@ def insert_correlation(conn, rule_name, severity, src_ip, abuse_score, descripti
     conn.commit()
     cursor.close()
     return correlation_id
+
+
+INSERT_NETWORK_EVENT_SQL = """
+INSERT INTO network_events (
+    ingested_at, event_timestamp, source, event_type,
+    src_ip, src_port, dest_ip, dest_port, protocol, detail
+) VALUES (
+    %(ingested_at)s, %(event_timestamp)s, %(source)s, %(event_type)s,
+    %(src_ip)s, %(src_port)s, %(dest_ip)s, %(dest_port)s, %(protocol)s, %(detail)s
+)
+"""
+
+UPSERT_NETWORK_ACTIVITY_SQL = """
+INSERT INTO network_activity_summary (
+    source, event_type, src_ip, dest_ip, dest_port, protocol, detail,
+    count, first_seen, last_seen
+) VALUES (
+    %(source)s, %(event_type)s, %(src_ip)s, %(dest_ip)s, %(dest_port)s, %(protocol)s, %(detail)s,
+    1, %(event_timestamp)s, %(event_timestamp)s
+) ON DUPLICATE KEY UPDATE
+    count = count + 1,
+    last_seen = GREATEST(last_seen, VALUES(last_seen))
+"""
+
+NETWORK_EVENT_FIELDS = [
+    "ingested_at", "event_timestamp", "source", "event_type",
+    "src_ip", "src_port", "dest_ip", "dest_port", "protocol", "detail",
+]
+
+
+def insert_network_event(conn, event: dict) -> int:
+    event = dict(event)
+    event.setdefault("ingested_at", datetime.now(timezone.utc).replace(tzinfo=None))
+    event.setdefault("event_timestamp", event["ingested_at"])
+    for field in NETWORK_EVENT_FIELDS:
+        event.setdefault(field, None)
+
+    cursor = conn.cursor()
+    cursor.execute(INSERT_NETWORK_EVENT_SQL, event)
+
+    summary_event = dict(event)
+    for field in ("src_ip", "dest_ip", "protocol", "detail"):
+        if summary_event.get(field) is None:
+            summary_event[field] = ""
+    if summary_event.get("dest_port") is None:
+        summary_event["dest_port"] = -1
+
+    cursor.execute(UPSERT_NETWORK_ACTIVITY_SQL, summary_event)
+
+    conn.commit()
+    row_id = cursor.lastrowid
+    cursor.close()
+    return row_id

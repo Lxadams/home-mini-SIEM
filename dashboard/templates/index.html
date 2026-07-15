@@ -10,13 +10,16 @@
         table { width: 100%; border-collapse: collapse; font-family: monospace; font-size: 0.85rem; }
         th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #333; }
         th { color: #999; font-weight: 500; }
+        th[data-key] { user-select: none; }
+        th[data-key]:hover { color: #ccc; }
         tbody tr:hover { background: #1a1a1a; cursor: pointer; }
 
-        #correlations-wrap { max-height: 360px; overflow-y: auto; margin-bottom: 2rem; }
+        #correlations-wrap, #raw-events-wrap { max-height: 360px; overflow-y: auto; margin-bottom: 1rem; }
 
         .charts { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem; }
         .chart-box { background: #1c1c1c; border-radius: 8px; padding: 1rem; height: 300px; position: relative; }
         .chart-box canvas { width: 100% !important; height: 100% !important; }
+        .chart-box.wide { height: 320px; margin-bottom: 1.5rem; }
         @media (max-width: 900px) { .charts { grid-template-columns: 1fr; } }
 
         .query-form { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1rem; }
@@ -29,54 +32,255 @@
         .sev-4 { color: #8fbf8f; }
 
         #drilldown-label { color: #999; margin-bottom: 0.5rem; font-size: 0.9rem; }
+
+        .tab-nav { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; border-bottom: 1px solid #333; }
+        .tab-button { background: none; border: none; color: #999; padding: 0.6rem 1rem; font-size: 0.95rem; cursor: pointer; border-bottom: 2px solid transparent; }
+        .tab-button:hover { color: #ccc; }
+        .tab-button.active { color: #eee; border-bottom-color: #4e8fd6; }
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
+        .hint { color: #666; font-size: 0.8rem; margin-bottom: 0.5rem; }
     </style>
 </head>
 <body>
     <h1>mini-siem</h1>
 
-    <h2>correlations</h2>
-    <div id="correlations-wrap">
+    <div class="tab-nav">
+        <button id="tabbtn-overview" class="tab-button active" onclick="switchTab('overview')">overview</button>
+        <button id="tabbtn-raw" class="tab-button" onclick="switchTab('raw')">raw events</button>
+        <button id="tabbtn-investigate" class="tab-button" onclick="switchTab('investigate')">investigate</button>
+        <button id="tabbtn-network" class="tab-button" onclick="switchTab('network')">network</button>
+    </div>
+
+    <!-- ===================== OVERVIEW TAB ===================== -->
+    <div id="tab-overview" class="tab-panel active">
+        <h2>correlations</h2>
+        <div id="correlations-wrap">
+            <table>
+                <thead id="correlations-thead">
+                    <tr>
+                        <th data-key="created_at">time</th>
+                        <th data-key="rule_name">rule</th>
+                        <th data-key="severity">sev</th>
+                        <th data-key="src_ip">ip</th>
+                        <th data-key="abuse_score">abuse score</th>
+                        <th data-key="description">description</th>
+                    </tr>
+                </thead>
+                <tbody id="correlations-table-body"></tbody>
+            </table>
+        </div>
+
+        <div class="chart-box wide"><canvas id="timeseriesChart"></canvas></div>
+
+        <div class="charts">
+            <div class="chart-box"><canvas id="sourceChart"></canvas></div>
+            <div class="chart-box"><canvas id="severityChart"></canvas></div>
+            <div class="chart-box"><canvas id="topIpsChart"></canvas></div>
+        </div>
+    </div>
+
+    <!-- ===================== RAW EVENTS TAB ===================== -->
+    <div id="tab-raw" class="tab-panel">
+        <h2>raw events</h2>
+        <p class="hint">unfiltered, live, most recent at top. click a column header to sort.</p>
+        <div id="raw-events-wrap">
+            <table>
+                <thead id="raw-events-thead">
+                    <tr>
+                        <th data-key="event_timestamp">time</th>
+                        <th data-key="source">source</th>
+                        <th data-key="event_type">type</th>
+                        <th data-key="severity">sev</th>
+                        <th data-key="src_ip">src</th>
+                        <th data-key="dest_ip">dest</th>
+                        <th data-key="signature">signature</th>
+                    </tr>
+                </thead>
+                <tbody id="raw-events-table-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ===================== INVESTIGATE TAB ===================== -->
+    <div id="tab-investigate" class="tab-panel">
+        <h2>investigate</h2>
+        <div class="query-form">
+            <select id="q-source">
+                <option value="">any source</option>
+                <option value="suricata">suricata</option>
+                <option value="auth_log">auth_log</option>
+            </select>
+            <input id="q-severity" type="number" placeholder="severity" min="1" max="4">
+            <input id="q-src_ip" type="text" placeholder="src ip">
+            <input id="q-dest_ip" type="text" placeholder="dest ip">
+            <input id="q-signature_contains" type="text" placeholder="signature contains...">
+            <input id="q-start" type="datetime-local">
+            <input id="q-end" type="datetime-local">
+            <button onclick="runQuery()">search</button>
+        </div>
+        <div id="drilldown-label"></div>
         <table>
-            <thead>
-                <tr><th>time</th><th>rule</th><th>sev</th><th>ip</th><th>abuse score</th><th>description</th></tr>
+            <thead id="investigate-thead">
+                <tr>
+                    <th data-key="event_timestamp">time</th>
+                    <th data-key="source">source</th>
+                    <th data-key="event_type">type</th>
+                    <th data-key="severity">sev</th>
+                    <th data-key="src_ip">src</th>
+                    <th data-key="dest_ip">dest</th>
+                    <th data-key="signature">signature</th>
+                </tr>
             </thead>
-            <tbody id="correlations-table-body"></tbody>
+            <tbody id="investigate-table-body"></tbody>
         </table>
     </div>
 
-    <div class="charts">
-        <div class="chart-box"><canvas id="sourceChart"></canvas></div>
-        <div class="chart-box"><canvas id="severityChart"></canvas></div>
-        <div class="chart-box"><canvas id="topIpsChart"></canvas></div>
-    </div>
+    <!-- ===================== NETWORK TAB ===================== -->
+    <div id="tab-network" class="tab-panel">
+        <h2>network activity</h2>
+        <p class="hint">
+            aggregated from network_activity_summary - one row per device/destination
+            combo with a count, not one row per raw packet. refreshes every 15s while
+            this tab is open, not pushed live over the socket (this is exactly the
+            volume the aggregate table exists to avoid re-creating).
+        </p>
+        <div class="query-form">
+            <select id="n-event_type">
+                <option value="">any type</option>
+                <option value="dns">dns</option>
+                <option value="flow">flow</option>
+            </select>
+            <input id="n-src_ip" type="text" placeholder="src ip">
+            <input id="n-dest_ip" type="text" placeholder="dest ip">
+            <input id="n-detail_contains" type="text" placeholder="detail contains... (e.g. domain)">
+            <button onclick="runNetworkQuery()">search</button>
+        </div>
+        <div id="network-wrap">
+            <table>
+                <thead id="network-thead">
+                    <tr>
+                        <th data-key="last_seen">last seen</th>
+                        <th data-key="event_type">type</th>
+                        <th data-key="src_ip">src</th>
+                        <th data-key="dest_ip">dest</th>
+                        <th data-key="dest_port">port</th>
+                        <th data-key="protocol">proto</th>
+                        <th data-key="detail">detail</th>
+                        <th data-key="count">count</th>
+                        <th data-key="first_seen">first seen</th>
+                    </tr>
+                </thead>
+                <tbody id="network-table-body"></tbody>
+            </table>
+        </div>
 
-    <h2>events (investigate)</h2>
-    <div class="query-form">
-        <select id="q-source">
-            <option value="">any source</option>
-            <option value="suricata">suricata</option>
-            <option value="auth_log">auth_log</option>
-        </select>
-        <input id="q-severity" type="number" placeholder="severity" min="1" max="4">
-        <input id="q-src_ip" type="text" placeholder="src ip">
-        <input id="q-dest_ip" type="text" placeholder="dest ip">
-        <input id="q-signature_contains" type="text" placeholder="signature contains...">
-        <input id="q-start" type="datetime-local">
-        <input id="q-end" type="datetime-local">
-        <button onclick="runQuery()">search</button>
+        <div class="charts">
+            <div class="chart-box"><canvas id="networkTypeChart"></canvas></div>
+            <div class="chart-box"><canvas id="networkTopTalkersChart"></canvas></div>
+        </div>
     </div>
-    <div id="drilldown-label"></div>
-    <table>
-        <thead>
-            <tr><th>time</th><th>source</th><th>type</th><th>sev</th><th>src</th><th>dest</th><th>signature</th></tr>
-        </thead>
-        <tbody id="query-table-body"></tbody>
-    </table>
 
     <script>
         const socket = io();
         const MAX_CORRELATION_ROWS = 50;
+        const MAX_RAW_EVENT_ROWS = 300;
 
+        // ---------- tabs ----------
+        let networkPollIntervalId = null;
+
+        function switchTab(name) {
+            document.querySelectorAll(".tab-panel").forEach((el) => el.classList.remove("active"));
+            document.querySelectorAll(".tab-button").forEach((el) => el.classList.remove("active"));
+            document.getElementById(`tab-${name}`).classList.add("active");
+            document.getElementById(`tabbtn-${name}`).classList.add("active");
+
+            // Polling only runs while the network tab is actually open -
+            // no point hitting /api/network/* on a 15s timer in the
+            // background for a tab nobody's looking at.
+            if (networkPollIntervalId) {
+                clearInterval(networkPollIntervalId);
+                networkPollIntervalId = null;
+            }
+            if (name === "network") {
+                loadNetworkActivity();
+                loadNetworkCharts();
+                networkPollIntervalId = setInterval(() => {
+                    loadNetworkActivity();
+                    loadNetworkCharts();
+                }, 15000);
+            }
+        }
+
+        // ---------- generic sortable table ----------
+        // Sorts whatever rows are currently loaded in the browser (bounded
+        // by each table's own limit/cap), not the full underlying MySQL
+        // table. Natural/default order is whatever the backend or a live
+        // socket push already gave us (newest first) until a header is
+        // clicked, at which point that sort is kept applied to new rows too.
+        function createSortableTable({ tbody, thead, renderRow, maxRows = null }) {
+            let data = [];
+            let sortState = { key: null, dir: 1 };
+
+            function applySort() {
+                if (!sortState.key) return;
+                const { key, dir } = sortState;
+                data.sort((a, b) => {
+                    let av = a[key];
+                    let bv = b[key];
+                    if (av === null || av === undefined) av = "";
+                    if (bv === null || bv === undefined) bv = "";
+                    if (typeof av === "number" && typeof bv === "number") {
+                        return (av - bv) * dir;
+                    }
+                    return String(av).localeCompare(String(bv)) * dir;
+                });
+            }
+
+            function updateHeaderLabels() {
+                thead.querySelectorAll("th[data-key]").forEach((th) => {
+                    if (!th.dataset.label) th.dataset.label = th.textContent;
+                    const base = th.dataset.label;
+                    th.textContent = th.dataset.key === sortState.key
+                        ? base + (sortState.dir === 1 ? " \u25B2" : " \u25BC")
+                        : base;
+                });
+            }
+
+            function render() {
+                tbody.innerHTML = data.map(renderRow).join("");
+            }
+
+            thead.querySelectorAll("th[data-key]").forEach((th) => {
+                th.style.cursor = "pointer";
+                th.addEventListener("click", () => {
+                    const key = th.dataset.key;
+                    sortState = sortState.key === key
+                        ? { key, dir: sortState.dir * -1 }
+                        : { key, dir: 1 };
+                    applySort();
+                    updateHeaderLabels();
+                    render();
+                });
+            });
+
+            return {
+                setAll(rows) {
+                    data = rows;
+                    applySort();
+                    updateHeaderLabels();
+                    render();
+                },
+                add(row) {
+                    data.unshift(row);
+                    if (maxRows) data = data.slice(0, maxRows);
+                    applySort();
+                    render();
+                },
+            };
+        }
+
+        // ---------- row renderers ----------
         function eventRowHtml(event) {
             const sevClass = event.severity ? `sev-${event.severity}` : "";
             return `<tr class="${sevClass}">
@@ -102,38 +306,134 @@
             </tr>`;
         }
 
-        const correlationsBody = document.getElementById("correlations-table-body");
+        // Sentinel values are a backend detail (MySQL can't group NULLs
+        // together in a UNIQUE KEY, see database.py's insert_network_event)
+        // - "" and -1 both mean "nothing here", cleaned up to blank for
+        // display rather than leaking that implementation detail into the UI.
+        function blankIfSentinel(value) {
+            if (value === "" || value === -1 || value === null || value === undefined) return "";
+            return value;
+        }
 
+        function networkRowHtml(row) {
+            return `<tr>
+                <td>${row.last_seen ?? ""}</td>
+                <td>${row.event_type ?? ""}</td>
+                <td>${blankIfSentinel(row.src_ip)}</td>
+                <td>${blankIfSentinel(row.dest_ip)}</td>
+                <td>${blankIfSentinel(row.dest_port)}</td>
+                <td>${blankIfSentinel(row.protocol)}</td>
+                <td>${blankIfSentinel(row.detail)}</td>
+                <td>${row.count ?? ""}</td>
+                <td>${row.first_seen ?? ""}</td>
+            </tr>`;
+        }
+
+        // ---------- table instances ----------
+        const correlationsTable = createSortableTable({
+            tbody: document.getElementById("correlations-table-body"),
+            thead: document.getElementById("correlations-thead"),
+            renderRow: correlationRowHtml,
+            maxRows: MAX_CORRELATION_ROWS,
+        });
+
+        const rawEventsTable = createSortableTable({
+            tbody: document.getElementById("raw-events-table-body"),
+            thead: document.getElementById("raw-events-thead"),
+            renderRow: eventRowHtml,
+            maxRows: MAX_RAW_EVENT_ROWS,
+        });
+
+        const investigateTable = createSortableTable({
+            tbody: document.getElementById("investigate-table-body"),
+            thead: document.getElementById("investigate-thead"),
+            renderRow: eventRowHtml,
+        });
+
+        const networkTable = createSortableTable({
+            tbody: document.getElementById("network-table-body"),
+            thead: document.getElementById("network-thead"),
+            renderRow: networkRowHtml,
+        });
+
+        // ---------- initial loads ----------
         function loadInitialCorrelations() {
             fetch(`/api/correlations?limit=${MAX_CORRELATION_ROWS}`)
                 .then((res) => res.json())
-                .then((rows) => {
-                    correlationsBody.innerHTML = rows.map(correlationRowHtml).join("");
-                });
+                .then((rows) => correlationsTable.setAll(rows));
+        }
+
+        function loadInitialRawEvents() {
+            fetch(`/api/query?limit=${MAX_RAW_EVENT_ROWS}`)
+                .then((res) => res.json())
+                .then((rows) => rawEventsTable.setAll(rows));
         }
 
         function showCorrelationEvents(correlationId) {
+            switchTab("investigate");
             document.getElementById("drilldown-label").textContent =
                 `showing events linked to correlation #${correlationId}`;
             fetch(`/api/correlations/${correlationId}/events`)
                 .then((res) => res.json())
-                .then((rows) => {
-                    document.getElementById("query-table-body").innerHTML = rows.map(eventRowHtml).join("");
-                });
+                .then((rows) => investigateTable.setAll(rows));
+        }
+
+        function runQuery() {
+            document.getElementById("drilldown-label").textContent = "";
+            const params = new URLSearchParams();
+            const fields = ["source", "severity", "src_ip", "dest_ip", "signature_contains", "start", "end"];
+            for (const field of fields) {
+                const value = document.getElementById(`q-${field}`).value;
+                if (value) params.set(field, value);
+            }
+            fetch(`/api/query?${params.toString()}`)
+                .then((res) => res.json())
+                .then((rows) => investigateTable.setAll(rows));
+        }
+
+        function loadNetworkActivity() {
+            const params = new URLSearchParams();
+            const fields = ["event_type", "src_ip", "dest_ip", "detail_contains"];
+            for (const field of fields) {
+                const value = document.getElementById(`n-${field}`)?.value;
+                if (value) params.set(field, value);
+            }
+            fetch(`/api/network/activity?${params.toString()}`)
+                .then((res) => res.json())
+                .then((rows) => networkTable.setAll(rows));
+        }
+
+        function runNetworkQuery() {
+            loadNetworkActivity();
+        }
+
+        // ---------- live updates ----------
+        let timeseriesRefreshPending = false;
+        function scheduleTimeseriesRefresh() {
+            // Debounced: a burst of events (e.g. a correlation-triggering
+            // flood) would otherwise fire a fresh /api/timeseries query on
+            // every single insert.
+            if (timeseriesRefreshPending) return;
+            timeseriesRefreshPending = true;
+            setTimeout(() => {
+                timeseriesRefreshPending = false;
+                loadTimeseries();
+            }, 3000);
         }
 
         socket.on("new_correlation", (c) => {
-            correlationsBody.insertAdjacentHTML("afterbegin", correlationRowHtml(c));
-            while (correlationsBody.rows.length > MAX_CORRELATION_ROWS) {
-                correlationsBody.deleteRow(-1);
-            }
+            correlationsTable.add(c);
             loadSummary();
+            scheduleTimeseriesRefresh();
         });
 
-        socket.on("new_event", () => {
+        socket.on("new_event", (e) => {
+            rawEventsTable.add(e);
             loadSummary();
+            scheduleTimeseriesRefresh();
         });
 
+        // ---------- charts ----------
         const sourceChart = new Chart(document.getElementById("sourceChart"), {
             type: "doughnut",
             data: { labels: [], datasets: [{ data: [], backgroundColor: ["#4e8fd6", "#d64e6e", "#6ed64e", "#d6c14e"] }] },
@@ -151,6 +451,32 @@
             data: { labels: [], datasets: [{ label: "count", data: [], backgroundColor: "#4e8fd6" }] },
             options: { indexAxis: "y", maintainAspectRatio: false, plugins: { title: { display: true, text: "top source IPs", color: "#eee" }, legend: { display: false } }, scales: { x: { ticks: { color: "#aaa" } }, y: { ticks: { color: "#aaa" } } } },
         });
+
+        const networkTypeChart = new Chart(document.getElementById("networkTypeChart"), {
+            type: "doughnut",
+            data: { labels: [], datasets: [{ data: [], backgroundColor: ["#4e8fd6", "#d64e6e", "#6ed64e", "#d6c14e"] }] },
+            options: { maintainAspectRatio: false, plugins: { title: { display: true, text: "network noise by type", color: "#eee" }, legend: { labels: { color: "#eee" } } } },
+        });
+
+        const networkTopTalkersChart = new Chart(document.getElementById("networkTopTalkersChart"), {
+            type: "bar",
+            data: { labels: [], datasets: [{ label: "count", data: [], backgroundColor: "#8fbf8f" }] },
+            options: { indexAxis: "y", maintainAspectRatio: false, plugins: { title: { display: true, text: "top talkers (by summed count)", color: "#eee" }, legend: { display: false } }, scales: { x: { ticks: { color: "#aaa" } }, y: { ticks: { color: "#aaa" } } } },
+        });
+
+        function loadNetworkCharts() {
+            fetch("/api/network/charts")
+                .then((res) => res.json())
+                .then((data) => {
+                    networkTypeChart.data.labels = data.by_type.map((r) => r.event_type);
+                    networkTypeChart.data.datasets[0].data = data.by_type.map((r) => r.total);
+                    networkTypeChart.update();
+
+                    networkTopTalkersChart.data.labels = data.top_talkers.map((r) => r.src_ip);
+                    networkTopTalkersChart.data.datasets[0].data = data.top_talkers.map((r) => r.total);
+                    networkTopTalkersChart.update();
+                });
+        }
 
         function loadSummary() {
             fetch("/api/summary")
@@ -170,23 +496,61 @@
                 });
         }
 
-        function runQuery() {
-            document.getElementById("drilldown-label").textContent = "";
-            const params = new URLSearchParams();
-            const fields = ["source", "severity", "src_ip", "dest_ip", "signature_contains", "start", "end"];
-            for (const field of fields) {
-                const value = document.getElementById(`q-${field}`).value;
-                if (value) params.set(field, value);
-            }
-            fetch(`/api/query?${params.toString()}`)
+        // Fixed colors keyed by source name rather than array index, so
+        // colors stay stable across refreshes even if MySQL returns
+        // sources in a different GROUP BY order from one call to the next.
+        const TIMESERIES_COLORS = { suricata: "#4e8fd6", auth_log: "#d64e6e", correlation: "#f0d264" };
+        function colorForSource(source) {
+            return TIMESERIES_COLORS[source] || "#8fbf8f";
+        }
+
+        let timeseriesChart;
+        function loadTimeseries() {
+            fetch("/api/timeseries?minutes=60&bucket_seconds=60")
                 .then((res) => res.json())
                 .then((rows) => {
-                    document.getElementById("query-table-body").innerHTML = rows.map(eventRowHtml).join("");
+                    const buckets = [...new Set(rows.map((r) => r.bucket))].sort();
+                    const sources = [...new Set(rows.map((r) => r.source))];
+                    const datasets = sources.map((source) => {
+                        const bySource = new Map(rows.filter((r) => r.source === source).map((r) => [r.bucket, r.count]));
+                        return {
+                            label: source,
+                            data: buckets.map((b) => bySource.get(b) ?? 0),
+                            borderColor: colorForSource(source),
+                            backgroundColor: colorForSource(source),
+                            tension: 0.2,
+                            fill: false,
+                        };
+                    });
+
+                    if (!timeseriesChart) {
+                        timeseriesChart = new Chart(document.getElementById("timeseriesChart"), {
+                            type: "line",
+                            data: { labels: buckets, datasets },
+                            options: {
+                                maintainAspectRatio: false,
+                                plugins: {
+                                    title: { display: true, text: "alerts over time (last hour)", color: "#eee" },
+                                    legend: { labels: { color: "#eee" } },
+                                },
+                                scales: {
+                                    x: { ticks: { color: "#aaa", maxRotation: 0 } },
+                                    y: { ticks: { color: "#aaa" }, beginAtZero: true },
+                                },
+                            },
+                        });
+                    } else {
+                        timeseriesChart.data.labels = buckets;
+                        timeseriesChart.data.datasets = datasets;
+                        timeseriesChart.update();
+                    }
                 });
         }
 
         loadSummary();
+        loadTimeseries();
         loadInitialCorrelations();
+        loadInitialRawEvents();
     </script>
 </body>
 </html>

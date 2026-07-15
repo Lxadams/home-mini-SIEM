@@ -5,6 +5,7 @@ from src.config import load_config, resolve
 from src.db.database import init_db, get_connection
 import time
 from src.correlation.runner import run_correlation_cycle
+from src.network.cleanup import run_cleanup_cycle
 
 
 class CorrelationThread:
@@ -26,6 +27,37 @@ class CorrelationThread:
                 except Exception:
                     import traceback
                     print("correlation cycle failed:")
+                    traceback.print_exc()
+                self._stop_event.wait(self.interval_seconds)
+        finally:
+            conn.close()
+
+
+class NetworkCleanupThread:
+    def __init__(self, config, interval_seconds=3600, ttl_hours=24):
+        self.config = config
+        self.interval_seconds = interval_seconds
+        self.ttl_hours = ttl_hours
+        self._stop_event = threading.Event()
+
+    def stop(self):
+        self._stop_event.set()
+
+    def run(self):
+        # No autocommit=True here on purpose, unlike CorrelationThread -
+        # that fix exists for a long-lived connection doing *repeated
+        # reads* that need to see new commits from other connections.
+        # This thread only ever runs a single DELETE per interval and
+        # commits explicitly, so there's no stale-snapshot read to guard
+        # against.
+        conn = get_connection(self.config["database"])
+        try:
+            while not self._stop_event.is_set():
+                try:
+                    run_cleanup_cycle(conn, self.ttl_hours)
+                except Exception:
+                    import traceback
+                    print("network cleanup cycle failed:")
                     traceback.print_exc()
                 self._stop_event.wait(self.interval_seconds)
         finally:
@@ -67,7 +99,17 @@ def main():
         correlation_thread_obj = CorrelationThread(
             config, interval_seconds=correlation_cfg.get("interval_seconds", 60)
         )
-    if not collectors and not correlation_thread_obj:
+
+    network_noise_cfg = config.get("network_noise", {})
+    cleanup_thread_obj = None
+    if network_noise_cfg.get("cleanup_enabled", True):
+        cleanup_thread_obj = NetworkCleanupThread(
+            config,
+            interval_seconds=network_noise_cfg.get("cleanup_interval_seconds", 3600),
+            ttl_hours=network_noise_cfg.get("ttl_hours", 24),
+        )
+
+    if not collectors and not correlation_thread_obj and not cleanup_thread_obj:
         print("Nothing enabled in config.yaml.")
         return
     threads = []
@@ -81,6 +123,14 @@ def main():
         t.start()
         threads.append(t)
         print(f"Started correlation thread (every {correlation_thread_obj.interval_seconds}s).")
+    if cleanup_thread_obj:
+        t = threading.Thread(target=cleanup_thread_obj.run, name="network_cleanup")
+        t.start()
+        threads.append(t)
+        print(
+            f"Started network cleanup thread (every "
+            f"{cleanup_thread_obj.interval_seconds}s, TTL {cleanup_thread_obj.ttl_hours}h)."
+        )
     try:
         while any(t.is_alive() for t in threads):
             for t in threads:
@@ -91,6 +141,8 @@ def main():
             collector.stop()
         if correlation_thread_obj:
             correlation_thread_obj.stop()
+        if cleanup_thread_obj:
+            cleanup_thread_obj.stop()
         for t in threads:
             t.join()
         print("All collectors stopped cleanly.")
