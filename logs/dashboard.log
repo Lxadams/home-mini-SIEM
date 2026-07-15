@@ -4,19 +4,57 @@ Werkzeug appears to be used in a production deployment. Consider switching to a 
 [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
  * Running on all addresses (0.0.0.0)
  * Running on http://127.0.0.1:5000
- * Running on http://192.168.20.8:5000
+ * Running on http://10.27.61.123:5000
 [33mPress CTRL+C to quit[0m
-127.0.0.1 - - [13/Jul/2026 01:16:34] "GET /socket.io/?EIO=4&transport=polling&t=PzMUF7u HTTP/1.1" 200 -
-127.0.0.1 - - [13/Jul/2026 01:16:34] "POST /socket.io/?EIO=4&transport=polling&t=PzMUF7x&sid=5numdn0jcEEFjFCdAAAA HTTP/1.1" 200 -
-127.0.0.1 - - [13/Jul/2026 01:16:34] "GET /socket.io/?EIO=4&transport=polling&t=PzMUF7y&sid=5numdn0jcEEFjFCdAAAA HTTP/1.1" 200 -
-127.0.0.1 - - [13/Jul/2026 01:16:34] "GET /socket.io/?EIO=4&transport=polling&t=PzMUF7_&sid=5numdn0jcEEFjFCdAAAA HTTP/1.1" 200 -
-127.0.0.1 - - [13/Jul/2026 11:37:04] "GET /socket.io/?EIO=4&transport=websocket&sid=5numdn0jcEEFjFCdAAAA HTTP/1.1" 200 -
-127.0.0.1 - - [13/Jul/2026 11:37:14] "GET /socket.io/?EIO=4&transport=polling&t=PzOiIz6 HTTP/1.1" 200 -
-127.0.0.1 - - [13/Jul/2026 11:37:14] "POST /socket.io/?EIO=4&transport=polling&t=PzOiIzM&sid=uEqPrdzRB6Vn0SPYAAAC HTTP/1.1" 200 -
-127.0.0.1 - - [13/Jul/2026 11:37:14] "GET /socket.io/?EIO=4&transport=polling&t=PzOiIzN&sid=uEqPrdzRB6Vn0SPYAAAC HTTP/1.1" 200 -
-127.0.0.1 - - [13/Jul/2026 11:37:14] "GET /socket.io/?EIO=4&transport=polling&t=PzOiIzc&sid=uEqPrdzRB6Vn0SPYAAAC HTTP/1.1" 200 -
-127.0.0.1 - - [13/Jul/2026 11:45:15] "GET /socket.io/?EIO=4&transport=websocket&sid=uEqPrdzRB6Vn0SPYAAAC HTTP/1.1" 200 -
-127.0.0.1 - - [13/Jul/2026 11:45:26] "GET /socket.io/?EIO=4&transport=polling&t=PzOkAw3 HTTP/1.1" 200 -
-127.0.0.1 - - [13/Jul/2026 11:45:26] "POST /socket.io/?EIO=4&transport=polling&t=PzOkAwD&sid=IPSZ4mqzl31tUQ0KAAAE HTTP/1.1" 200 -
-127.0.0.1 - - [13/Jul/2026 11:45:26] "GET /socket.io/?EIO=4&transport=polling&t=PzOkAwE&sid=IPSZ4mqzl31tUQ0KAAAE HTTP/1.1" 200 -
-127.0.0.1 - - [13/Jul/2026 11:45:26] "GET /socket.io/?EIO=4&transport=polling&t=PzOkAwS&sid=IPSZ4mqzl31tUQ0KAAAE HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:12:33] "GET /socket.io/?EIO=4&transport=polling&t=PzUPRv0 HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:12:33] "POST /socket.io/?EIO=4&transport=polling&t=PzUPRv5&sid=NBM9vLHeI6k14zhgAAAA HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:12:33] "GET /socket.io/?EIO=4&transport=polling&t=PzUPRv5.0&sid=NBM9vLHeI6k14zhgAAAA HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:12:33] "GET /socket.io/?EIO=4&transport=polling&t=PzUPRvC&sid=NBM9vLHeI6k14zhgAAAA HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:12:36] "GET /socket.io/?EIO=4&transport=websocket&sid=NBM9vLHeI6k14zhgAAAA HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:12:36] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:12:36] "GET /socket.io/?EIO=4&transport=polling&t=PzUPSa- HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:12:36] "POST /socket.io/?EIO=4&transport=polling&t=PzUPSbd&sid=BeiTfkmZpBtpFJKCAAAC HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:12:36] "GET /socket.io/?EIO=4&transport=polling&t=PzUPSbd.0&sid=BeiTfkmZpBtpFJKCAAAC HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:12:36] "GET /api/correlations?limit=50 HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:12:36] "GET /socket.io/?EIO=4&transport=polling&t=PzUPSbr&sid=BeiTfkmZpBtpFJKCAAAC HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:12:36] "GET /api/summary HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:12:42] "GET /api/query HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:22:18] "GET /socket.io/?EIO=4&transport=websocket&sid=BeiTfkmZpBtpFJKCAAAC HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:22:18] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:22:18] "GET /socket.io/?EIO=4&transport=polling&t=PzURggs HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:22:18] "POST /socket.io/?EIO=4&transport=polling&t=PzURghW&sid=tgnta0jSaFHG0eDjAAAE HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:22:18] "GET /socket.io/?EIO=4&transport=polling&t=PzURghX&sid=tgnta0jSaFHG0eDjAAAE HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:22:18] "GET /api/correlations?limit=50 HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:22:18] "GET /api/summary HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:22:18] "GET /socket.io/?EIO=4&transport=polling&t=PzURghm&sid=tgnta0jSaFHG0eDjAAAE HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:22:25] "GET /api/summary HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:22:25] "GET /api/summary HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:22:25] "GET /api/summary HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:22:33] "GET /socket.io/?EIO=4&transport=websocket&sid=tgnta0jSaFHG0eDjAAAE HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:22:33] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:22:33] "GET /socket.io/?EIO=4&transport=polling&t=PzURkFg HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:22:33] "POST /socket.io/?EIO=4&transport=polling&t=PzURkGJ&sid=7SdoU_QcAhH6A7u2AAAG HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:22:33] "GET /socket.io/?EIO=4&transport=polling&t=PzURkGK&sid=7SdoU_QcAhH6A7u2AAAG HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:22:33] "GET /api/correlations?limit=50 HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:22:33] "GET /api/summary HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:22:36] "GET /api/query HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:24:07] "GET /socket.io/?EIO=4&transport=websocket&sid=7SdoU_QcAhH6A7u2AAAG HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:24:07] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:24:07] "GET /socket.io/?EIO=4&transport=polling&t=PzUS5AM HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:24:07] "POST /socket.io/?EIO=4&transport=polling&t=PzUS5BA&sid=R6Oc09apKviV0TCkAAAI HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:24:07] "GET /api/correlations?limit=50 HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:24:07] "GET /api/summary HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:24:07] "GET /socket.io/?EIO=4&transport=polling&t=PzUS5BC&sid=R6Oc09apKviV0TCkAAAI HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:24:07] "GET /socket.io/?EIO=4&transport=polling&t=PzUS5Bs&sid=R6Oc09apKviV0TCkAAAI HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:29:52] "GET /socket.io/?EIO=4&transport=websocket&sid=R6Oc09apKviV0TCkAAAI HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:29:52] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:29:52] "GET /socket.io/?EIO=4&transport=polling&t=PzUTPQ8 HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:29:52] "POST /socket.io/?EIO=4&transport=polling&t=PzUTPQn&sid=8t9p6JFMSAQa-zDPAAAK HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:29:52] "GET /socket.io/?EIO=4&transport=polling&t=PzUTPQn.0&sid=8t9p6JFMSAQa-zDPAAAK HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:29:52] "GET /api/correlations?limit=50 HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:29:52] "GET /api/summary HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:29:52] "GET /socket.io/?EIO=4&transport=polling&t=PzUTPQv&sid=8t9p6JFMSAQa-zDPAAAK HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:29:52] "GET /socket.io/?EIO=4&transport=polling&t=PzUTPRN&sid=8t9p6JFMSAQa-zDPAAAK HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 14:29:54] "GET /api/query HTTP/1.1" 200 -
+/usr/lib/python3.14/multiprocessing/resource_tracker.py:396: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown: {'/mp-u7_x4l26'}
+  warnings.warn(

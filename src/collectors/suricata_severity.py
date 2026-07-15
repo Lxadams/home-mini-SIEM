@@ -45,6 +45,7 @@ SURICATA_CATEGORY_SEVERITY = {
 }
 
 DEFAULT_SEVERITY = 3  # medium, used when a category isn't in the table above
+ENGINE_ALERT_SEVERITY = 4  # Suricata's own decoder/stream anomaly events, not threat detections
 
 # Signature-level overrides, checked as a case-insensitive substring match
 # against the alert signature. Checked before the category lookup, since
@@ -53,20 +54,18 @@ SIGNATURE_OVERRIDES = [
     ("tor", 2),  # Known Tor relay/exit traffic, worth a closer look than generic Misc Attack
 ]
 
-
 def map_suricata_severity(category, signature):
+    if signature and signature.startswith("SURICATA "):
+        return ENGINE_ALERT_SEVERITY
     if signature:
         sig_lower = signature.lower()
         for keyword, severity in SIGNATURE_OVERRIDES:
             if keyword in sig_lower:
                 return severity
-
     if not category:
         return DEFAULT_SEVERITY
-
     severity = SURICATA_CATEGORY_SEVERITY.get(category.strip().lower())
     if severity is None:
         print(f"suricata_severity: unmapped category '{category}', using default {DEFAULT_SEVERITY}")
         return DEFAULT_SEVERITY
-
     return severity
